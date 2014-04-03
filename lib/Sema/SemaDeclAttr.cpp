@@ -1396,6 +1396,16 @@ static void handleTLSModelAttr(Sema &S, Decl *D,
                           Attr.getAttributeSpellingListIndex()));
 }
 
+static void handleKernelAttr(Sema &S, Decl *D, const AttributeList &Attr) {
+  if (S.LangOpts.Renderscript) {
+    D->addAttr(::new (S.Context) 
+               KernelAttr(Attr.getRange(), S.Context,
+                          Attr.getAttributeSpellingListIndex()));
+  } else {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << "kernel";
+  }
+}
+
 static void handleMallocAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
     QualType RetTy = FD->getReturnType();
@@ -4129,6 +4139,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case AttributeList::AT_CUDALaunchBounds:
     handleLaunchBoundsAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_Kernel:
+    handleKernelAttr(S, D, Attr);
     break;
   case AttributeList::AT_Malloc:
     handleMallocAttr(S, D, Attr);
