@@ -612,6 +612,11 @@ def OpenCLConstantAddressSpace : TypeAttr {
   let Documentation = [Undocumented];
 }
 
+def Kernel : Attr {
+  let Spellings = [GNU<"kernel">];
+  let Documentation = [Undocumented];
+}
+
 def Deprecated : InheritableAttr {
   let Spellings = [GCC<"deprecated">, Declspec<"deprecated">,
                    CXX11<"","deprecated">];

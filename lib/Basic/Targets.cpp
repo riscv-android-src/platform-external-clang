@@ -3984,6 +3984,8 @@ public:
         FPU |= FPARMV8;
       else if (Features[i] == "+neon")
         FPU |= NeonFPU;
+      else if (Features[i] == "+long64")
+        LongWidth = LongAlign = 64;  // RenderScript uses a 64-bit long type
       else if (Features[i] == "+hwdiv")
         HWDiv |= HWDivThumb;
       else if (Features[i] == "+hwdiv-arm")
