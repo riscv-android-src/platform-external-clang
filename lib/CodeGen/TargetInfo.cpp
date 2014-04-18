@@ -4401,12 +4401,9 @@ bool ARMABIInfo::isIllegalVectorType(QualType Ty) const {
   if (const VectorType *VT = Ty->getAs<VectorType>()) {
     // Check whether VT is legal.
     unsigned NumElements = VT->getNumElements();
-    uint64_t Size = getContext().getTypeSize(VT);
     // NumElements should be power of 2.
     if (((NumElements & (NumElements - 1)) != 0) && NumElements != 3)
       return true;
-    // Size should be greater than 32 bits.
-    return Size <= 32;
   }
   return false;
 }
