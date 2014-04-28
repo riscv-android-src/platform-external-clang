@@ -91,7 +91,8 @@ LOCAL_STATIC_LIBRARIES := \
   libLLVMCore \
   libLLVMOption \
   libLLVMSupport \
-  libLLVMTarget
+  libLLVMTarget \
+  libLLVMProfileData
 
 LOCAL_LDLIBS += -lm
 ifdef USE_MINGW
