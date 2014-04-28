@@ -15,7 +15,6 @@
 #include "CIndexer.h"
 #include "CIndexDiagnostic.h"
 #include "CLog.h"
-#include "CXComment.h"
 #include "CXCursor.h"
 #include "CXSourceLocation.h"
 #include "CXString.h"
@@ -1953,6 +1952,10 @@ void OMPClauseEnqueue::VisitOMPFirstprivateClause(
 }
 void OMPClauseEnqueue::VisitOMPSharedClause(const OMPSharedClause *C) {
   VisitOMPClauseList(C);
+}
+void OMPClauseEnqueue::VisitOMPLinearClause(const OMPLinearClause *C) {
+  VisitOMPClauseList(C);
+  Visitor->AddStmt(C->getStep());
 }
 void OMPClauseEnqueue::VisitOMPCopyinClause(const OMPCopyinClause *C) {
   VisitOMPClauseList(C);
@@ -6029,8 +6032,10 @@ static int getCursorPlatformAvailabilityForDecl(const Decl *D,
       HadAvailAttr = true;
       if (always_deprecated)
         *always_deprecated = 1;
-      if (deprecated_message)
+      if (deprecated_message) {
+        clang_disposeString(*deprecated_message);
         *deprecated_message = cxstring::createDup(Deprecated->getMessage());
+      }
       continue;
     }
     
@@ -6039,6 +6044,7 @@ static int getCursorPlatformAvailabilityForDecl(const Decl *D,
       if (always_unavailable)
         *always_unavailable = 1;
       if (unavailable_message) {
+        clang_disposeString(*unavailable_message);
         *unavailable_message = cxstring::createDup(Unavailable->getMessage());
       }
       continue;
@@ -6305,17 +6311,6 @@ CXString clang_Cursor_getBriefCommentText(CXCursor C) {
   return cxstring::createNull();
 }
 
-CXComment clang_Cursor_getParsedComment(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
-    return cxcomment::createCXComment(NULL, NULL);
-
-  const Decl *D = getCursorDecl(C);
-  const ASTContext &Context = getCursorContext(C);
-  const comments::FullComment *FC = Context.getCommentForDecl(D, /*PP=*/ NULL);
-
-  return cxcomment::createCXComment(FC, getCursorTU(C));
-}
-
 CXModule clang_Cursor_getModule(CXCursor C) {
   if (C.kind == CXCursor_ModuleImportDecl) {
     if (const ImportDecl *ImportD =
@@ -6401,6 +6396,16 @@ unsigned clang_CXXMethod_isPureVirtual(CXCursor C) {
   const CXXMethodDecl *Method =
       D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : 0;
   return (Method && Method->isVirtual() && Method->isPure()) ? 1 : 0;
+}
+
+unsigned clang_CXXMethod_isConst(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return 0;
+
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const CXXMethodDecl *Method =
+      D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : 0;
+  return (Method && (Method->getTypeQualifiers() & Qualifiers::Const)) ? 1 : 0;
 }
 
 unsigned clang_CXXMethod_isStatic(CXCursor C) {
@@ -6706,7 +6711,7 @@ void cxindex::printDiagsToStderr(ASTUnit *Unit) {
   for (ASTUnit::stored_diag_iterator D = Unit->stored_diag_begin(), 
                                   DEnd = Unit->stored_diag_end();
        D != DEnd; ++D) {
-    CXStoredDiagnostic Diag(*D, Unit->getASTContext().getLangOpts());
+    CXStoredDiagnostic Diag(*D, Unit->getLangOpts());
     CXString Msg = clang_formatDiagnostic(&Diag,
                                 clang_defaultDiagnosticDisplayOptions());
     fprintf(stderr, "%s\n", clang_getCString(Msg));

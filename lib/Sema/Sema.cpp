@@ -79,7 +79,8 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
     MSPointerToMemberRepresentationMethod(
         LangOpts.getMSPointerToMemberRepresentationMethod()),
     VtorDispModeStack(1, MSVtorDispAttr::Mode(LangOpts.VtorDispMode)),
-    VisContext(0),
+    DataSegStack(nullptr), BSSSegStack(nullptr), ConstSegStack(nullptr),
+    CodeSegStack(nullptr), VisContext(0),
     IsBuildingRecoveryCallExpr(false),
     ExprNeedsCleanups(false), LateTemplateParser(0), OpaqueParser(0),
     IdResolver(pp), StdInitializerList(0), CXXTypeInfoDecl(0), MSVCGuidDecl(0),
@@ -1113,14 +1114,30 @@ BlockScopeInfo *Sema::getCurBlock() {
   if (FunctionScopes.empty())
     return 0;
 
-  return dyn_cast<BlockScopeInfo>(FunctionScopes.back());
+  auto CurBSI = dyn_cast<BlockScopeInfo>(FunctionScopes.back());
+  if (CurBSI && CurBSI->TheDecl &&
+      !CurBSI->TheDecl->Encloses(CurContext)) {
+    // We have switched contexts due to template instantiation.
+    assert(!ActiveTemplateInstantiations.empty());
+    return nullptr;
+  }
+
+  return CurBSI;
 }
 
 LambdaScopeInfo *Sema::getCurLambda() {
   if (FunctionScopes.empty())
     return 0;
 
-  return dyn_cast<LambdaScopeInfo>(FunctionScopes.back());
+  auto CurLSI = dyn_cast<LambdaScopeInfo>(FunctionScopes.back());
+  if (CurLSI && CurLSI->Lambda &&
+      !CurLSI->Lambda->Encloses(CurContext)) {
+    // We have switched contexts due to template instantiation.
+    assert(!ActiveTemplateInstantiations.empty());
+    return nullptr;
+  }
+
+  return CurLSI;
 }
 // We have a generic lambda if we parsed auto parameters, or we have 
 // an associated template parameter list.

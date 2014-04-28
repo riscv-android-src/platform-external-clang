@@ -456,6 +456,25 @@ void CXXNameMangler::mangleFunctionEncoding(const FunctionDecl *FD) {
   if (!Context.shouldMangleDeclName(FD))
     return;
 
+  if (FD->hasAttr<EnableIfAttr>()) {
+    FunctionTypeDepthState Saved = FunctionTypeDepth.push();
+    Out << "Ua9enable_ifI";
+    // FIXME: specific_attr_iterator iterates in reverse order. Fix that and use
+    // it here.
+    for (AttrVec::const_reverse_iterator I = FD->getAttrs().rbegin(),
+                                         E = FD->getAttrs().rend();
+         I != E; ++I) {
+      EnableIfAttr *EIA = dyn_cast<EnableIfAttr>(*I);
+      if (!EIA)
+        continue;
+      Out << 'X';
+      mangleExpression(EIA->getCond());
+      Out << 'E';
+    }
+    Out << 'E';
+    FunctionTypeDepth.pop(Saved);
+  }
+
   // Whether the mangling of a function type includes the return type depends on
   // the context and the nature of the function. The rules for deciding whether
   // the return type is included are:
@@ -2359,10 +2378,37 @@ void CXXNameMangler::mangleType(const TemplateSpecializationType *T) {
 }
 
 void CXXNameMangler::mangleType(const DependentNameType *T) {
+  // Proposal by cxx-abi-dev, 2014-03-26
+  // <class-enum-type> ::= <name>    # non-dependent or dependent type name or
+  //                                 # dependent elaborated type specifier using
+  //                                 # 'typename'
+  //                   ::= Ts <name> # dependent elaborated type specifier using
+  //                                 # 'struct' or 'class'
+  //                   ::= Tu <name> # dependent elaborated type specifier using
+  //                                 # 'union'
+  //                   ::= Te <name> # dependent elaborated type specifier using
+  //                                 # 'enum'
+  switch (T->getKeyword()) {
+    case ETK_Typename:
+      break;
+    case ETK_Struct:
+    case ETK_Class:
+    case ETK_Interface:
+      Out << "Ts";
+      break;
+    case ETK_Union:
+      Out << "Tu";
+      break;
+    case ETK_Enum:
+      Out << "Te";
+      break;
+    default:
+      llvm_unreachable("unexpected keyword for dependent type name");
+  }
   // Typename types are always nested
   Out << 'N';
   manglePrefix(T->getQualifier());
-  mangleSourceName(T->getIdentifier());    
+  mangleSourceName(T->getIdentifier());
   Out << 'E';
 }
 
@@ -3428,7 +3474,7 @@ bool CXXNameMangler::mangleSubstitution(uintptr_t Ptr) {
 
     // <seq-id> is encoded in base-36, using digits and upper case letters.
     char Buffer[10];
-    char *BufferPtr = llvm::array_endof(Buffer);
+    char *BufferPtr = std::end(Buffer);
 
     if (SeqID == 0) *--BufferPtr = '0';
 
@@ -3441,9 +3487,7 @@ bool CXXNameMangler::mangleSubstitution(uintptr_t Ptr) {
       SeqID /= 36;
     }
 
-    Out << 'S'
-        << StringRef(BufferPtr, llvm::array_endof(Buffer)-BufferPtr)
-        << '_';
+    Out << 'S' << StringRef(BufferPtr, std::end(Buffer) - BufferPtr) << '_';
   }
 
   return true;

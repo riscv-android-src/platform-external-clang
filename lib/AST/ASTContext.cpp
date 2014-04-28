@@ -422,6 +422,8 @@ comments::FullComment *ASTContext::cloneFullComment(comments::FullComment *FC,
   ThisDeclInfo->IsFilled = false;
   ThisDeclInfo->fill();
   ThisDeclInfo->CommentDecl = FC->getDecl();
+  if (!ThisDeclInfo->TemplateParameters)
+    ThisDeclInfo->TemplateParameters = FC->getDeclInfo()->TemplateParameters;
   comments::FullComment *CFC =
     new (*this) comments::FullComment(FC->getBlocks(),
                                       ThisDeclInfo);
@@ -1322,7 +1324,9 @@ CharUnits ASTContext::getDeclAlign(const Decl *D, bool ForAlignof) const {
             Align = std::max(Align, Target->getLargeArrayAlign());
         }
 
-        // Walk through any array types while we're at it.
+        // Keep track of extra alignment requirements on the array itself, then
+        // work with the element type.
+        Align = std::max(Align, getPreferredTypeAlign(T.getTypePtr()));
         T = getBaseElementType(arrayType);
       }
       Align = std::max(Align, getPreferredTypeAlign(T.getTypePtr()));
@@ -3559,12 +3563,28 @@ bool ASTContext::QIdProtocolsAdoptObjCObjectProtocols(QualType QT,
   CollectInheritedProtocols(IDecl, InheritedProtocols);
   if (InheritedProtocols.empty())
     return false;
-      
+  // Check that if every protocol in list of id<plist> conforms to a protcol
+  // of IDecl's, then bridge casting is ok.
+  bool Conforms = false;
+  for (auto *Proto : OPT->quals()) {
+    Conforms = false;
+    for (auto *PI : InheritedProtocols) {
+      if (ProtocolCompatibleWithProtocol(Proto, PI)) {
+        Conforms = true;
+        break;
+      }
+    }
+    if (!Conforms)
+      break;
+  }
+  if (Conforms)
+    return true;
+  
   for (auto *PI : InheritedProtocols) {
     // If both the right and left sides have qualifiers.
     bool Adopts = false;
     for (auto *Proto : OPT->quals()) {
-      // return 'true' if '*PI' is in the inheritance hierarchy of Proto
+      // return 'true' if 'PI' is in the inheritance hierarchy of Proto
       if ((Adopts = ProtocolCompatibleWithProtocol(PI, Proto)))
         break;
     }
