@@ -12,7 +12,7 @@ TBLGEN_TABLES := \
   DiagnosticFrontendKinds.inc \
   StmtNodes.inc
 
-clang_rewrite_core_SRC_FILES := \
+clang_rewrite_SRC_FILES := \
   DeltaTree.cpp \
   HTMLRewrite.cpp \
   RewriteRope.cpp \
@@ -23,8 +23,8 @@ clang_rewrite_core_SRC_FILES := \
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(clang_rewrite_core_SRC_FILES)
-LOCAL_MODULE:= libclangRewriteCore
+LOCAL_SRC_FILES := $(clang_rewrite_SRC_FILES)
+LOCAL_MODULE:= libclangRewrite
 LOCAL_MODULE_TAGS := optional
 
 include $(CLANG_HOST_BUILD_MK)
@@ -35,8 +35,8 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(clang_rewrite_core_SRC_FILES)
-LOCAL_MODULE:= libclangRewriteCore
+LOCAL_SRC_FILES := $(clang_rewrite_SRC_FILES)
+LOCAL_MODULE:= libclangRewrite
 LOCAL_MODULE_TAGS := optional
 
 include $(CLANG_DEVICE_BUILD_MK)
