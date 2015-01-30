@@ -95,6 +95,7 @@ using llvm::opt::ArgStringList;
     bool hasGoodDiagnostics() const override { return true; }
     bool hasIntegratedAssembler() const override { return true; }
     bool hasIntegratedCPP() const override { return true; }
+    bool canEmitIR() const override { return true; }
 
     void ConstructJob(Compilation &C, const JobAction &JA,
                       const InputInfo &Output, const InputInfoList &Inputs,
@@ -227,6 +228,8 @@ namespace arm {
   const char* getARMCPUForMArch(const llvm::opt::ArgList &Args,
                                 const llvm::Triple &Triple);
   const char* getLLVMArchSuffixForARM(StringRef CPU);
+
+  void appendEBLinkFlags(const llvm::opt::ArgList &Args, ArgStringList &CmdArgs, const llvm::Triple &Triple);
 }
 
 namespace mips {

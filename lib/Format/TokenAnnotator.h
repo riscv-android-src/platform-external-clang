@@ -27,12 +27,13 @@ namespace format {
 
 enum LineType {
   LT_Invalid,
-  LT_Other,
-  LT_PreprocessorDirective,
-  LT_VirtualFunctionDecl,
+  LT_ImportStatement,
   LT_ObjCDecl, // An @interface, @implementation, or @protocol line.
   LT_ObjCMethodDecl,
-  LT_ObjCProperty // An @property line.
+  LT_ObjCProperty, // An @property line.
+  LT_Other,
+  LT_PreprocessorDirective,
+  LT_VirtualFunctionDecl
 };
 
 class AnnotatedLine {
@@ -58,11 +59,8 @@ public:
       I->Tok->Previous = Current;
       Current = Current->Next;
       Current->Children.clear();
-      for (SmallVectorImpl<UnwrappedLine>::const_iterator
-               I = Node.Children.begin(),
-               E = Node.Children.end();
-           I != E; ++I) {
-        Children.push_back(new AnnotatedLine(*I));
+      for (const auto& Child : Node.Children) {
+        Children.push_back(new AnnotatedLine(Child));
         Current->Children.push_back(Children.back());
       }
     }
@@ -73,6 +71,12 @@ public:
   ~AnnotatedLine() {
     for (unsigned i = 0, e = Children.size(); i != e; ++i) {
       delete Children[i];
+    }
+    FormatToken *Current = First;
+    while (Current) {
+      Current->Children.clear();
+      Current->Role.reset();
+      Current = Current->Next;
     }
   }
 

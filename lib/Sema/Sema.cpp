@@ -245,6 +245,8 @@ Sema::~Sema() {
 
   // Destroys data sharing attributes stack for OpenMP
   DestroyDataSharingAttributesStack();
+
+  assert(DelayedTypos.empty() && "Uncorrected typos!");
 }
 
 /// makeUnavailableInSystemHeader - There is an error in the current
@@ -334,18 +336,6 @@ ExprResult Sema::ImpCastExprToType(Expr *E, QualType Ty,
 
   if (ExprTy == TypeTy)
     return E;
-
-  // If this is a derived-to-base cast to a through a virtual base, we
-  // need a vtable.
-  if (Kind == CK_DerivedToBase &&
-      BasePathInvolvesVirtualBase(*BasePath)) {
-    QualType T = E->getType();
-    if (const PointerType *Pointer = T->getAs<PointerType>())
-      T = Pointer->getPointeeType();
-    if (const RecordType *RecordTy = T->getAs<RecordType>())
-      MarkVTableUsed(E->getLocStart(),
-                     cast<CXXRecordDecl>(RecordTy->getDecl()));
-  }
 
   if (ImplicitCastExpr *ImpCast = dyn_cast<ImplicitCastExpr>(E)) {
     if (ImpCast->getCastKind() == Kind && (!BasePath || BasePath->empty())) {
@@ -678,7 +668,7 @@ void Sema::ActOnEndOfTranslationUnit() {
   // All delayed member exception specs should be checked or we end up accepting
   // incompatible declarations.
   assert(DelayedDefaultedMemberExceptionSpecs.empty());
-  assert(DelayedDestructorExceptionSpecChecks.empty());
+  assert(DelayedExceptionSpecChecks.empty());
 
   // Remove file scoped decls that turned out to be used.
   UnusedFileScopedDecls.erase(
