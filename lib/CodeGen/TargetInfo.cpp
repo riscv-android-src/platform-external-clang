@@ -3891,7 +3891,6 @@ ABIArgInfo AArch64ABIInfo::classifyArgumentType(QualType Ty) const {
     // Android promotes <2 x i8> to i16, not i32
     if (Size <= 16) {
       llvm::Type *ResType = llvm::Type::getInt16Ty(getVMContext());
-      AllocatedGPR++;
       return ABIArgInfo::getDirect(ResType);
     }
     if (Size == 32) {
