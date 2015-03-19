@@ -98,8 +98,7 @@ arrangeLLVMFunctionInfo(CodeGenTypes &CGT, bool instanceMethod,
                         CanQual<FunctionProtoType> FTP) {
   RequiredArgs required = RequiredArgs::forPrototypePlus(FTP, prefix.size());
   // FIXME: Kill copy.
-  for (unsigned i = 0, e = FTP->getNumParams(); i != e; ++i)
-    prefix.push_back(FTP->getParamType(i));
+  prefix.append(FTP->param_type_begin(), FTP->param_type_end());
   CanQualType resultType = FTP->getReturnType().getUnqualifiedType();
   return CGT.arrangeLLVMFunctionInfo(resultType, instanceMethod,
                                      /*chainCall=*/false, prefix,
@@ -207,8 +206,7 @@ CodeGenTypes::arrangeCXXStructorDeclaration(const CXXMethodDecl *MD,
   CanQual<FunctionProtoType> FTP = GetFormalType(MD);
 
   // Add the formal parameters.
-  for (unsigned i = 0, e = FTP->getNumParams(); i != e; ++i)
-    argTypes.push_back(FTP->getParamType(i));
+  argTypes.append(FTP->param_type_begin(), FTP->param_type_end());
 
   TheCXXABI.buildStructorSignature(MD, Type, argTypes);
 
@@ -1402,7 +1400,7 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
       FuncAttrs.addAttribute(llvm::Attribute::ReadOnly);
       FuncAttrs.addAttribute(llvm::Attribute::NoUnwind);
     }
-    if (TargetDecl->hasAttr<MallocAttr>())
+    if (TargetDecl->hasAttr<RestrictAttr>())
       RetAttrs.addAttribute(llvm::Attribute::NoAlias);
     if (TargetDecl->hasAttr<ReturnsNonNullAttr>())
       RetAttrs.addAttribute(llvm::Attribute::NonNull);
@@ -2342,7 +2340,7 @@ void CodeGenFunction::EmitFunctionEpilog(const CGFunctionInfo &FI,
   }
 
   if (!RetDbgLoc.isUnknown())
-    Ret->setDebugLoc(RetDbgLoc);
+    Ret->setDebugLoc(std::move(RetDbgLoc));
 }
 
 static bool isInAllocaArgument(CGCXXABI &ABI, QualType type) {
@@ -2734,8 +2732,22 @@ struct DestroyUnpassedArg : EHScopeStack::Cleanup {
 
 }
 
+struct DisableDebugLocationUpdates {
+  CodeGenFunction &CGF;
+  bool disabledDebugInfo;
+  DisableDebugLocationUpdates(CodeGenFunction &CGF, const Expr *E) : CGF(CGF) {
+    if ((disabledDebugInfo = isa<CXXDefaultArgExpr>(E) && CGF.getDebugInfo()))
+      CGF.disableDebugInfo();
+  }
+  ~DisableDebugLocationUpdates() {
+    if (disabledDebugInfo)
+      CGF.enableDebugInfo();
+  }
+};
+
 void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
                                   QualType type) {
+  DisableDebugLocationUpdates Dis(*this, E);
   if (const ObjCIndirectCopyRestoreExpr *CRE
         = dyn_cast<ObjCIndirectCopyRestoreExpr>(E)) {
     assert(getLangOpts().ObjCAutoRefCount);
@@ -3290,7 +3302,8 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
 
   llvm::BasicBlock *InvokeDest = nullptr;
   if (!Attrs.hasAttribute(llvm::AttributeSet::FunctionIndex,
-                          llvm::Attribute::NoUnwind))
+                          llvm::Attribute::NoUnwind) ||
+      currentFunctionUsesSEHTry())
     InvokeDest = getInvokeDest();
 
   llvm::CallSite CS;
@@ -3309,6 +3322,12 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
     Attrs =
         Attrs.addAttribute(getLLVMContext(), llvm::AttributeSet::FunctionIndex,
                            llvm::Attribute::AlwaysInline);
+
+  // Disable inlining inside SEH __try blocks.
+  if (isSEHTryScope())
+    Attrs =
+        Attrs.addAttribute(getLLVMContext(), llvm::AttributeSet::FunctionIndex,
+                           llvm::Attribute::NoInline);
 
   CS.setAttributes(Attrs);
   CS.setCallingConv(static_cast<llvm::CallingConv::ID>(CallingConv));

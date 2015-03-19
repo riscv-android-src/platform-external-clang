@@ -320,7 +320,7 @@ public:
   Value *VisitCastExpr(CastExpr *E);
 
   Value *VisitCallExpr(const CallExpr *E) {
-    if (E->getCallReturnType()->isReferenceType())
+    if (E->getCallReturnType(CGF.getContext())->isReferenceType())
       return EmitLoadOfLValue(E);
 
     Value *V = CGF.EmitCallExpr(E).getScalarVal();
@@ -2056,7 +2056,7 @@ LValue ScalarExprEmitter::EmitCompoundAssignLValue(
   BinOpInfo OpInfo;
 
   if (E->getComputationResultType()->isAnyComplexType())
-    return CGF.EmitScalarCompooundAssignWithComplex(E, Result);
+    return CGF.EmitScalarCompoundAssignWithComplex(E, Result);
 
   // Emit the RHS first.  __block variables need to have the rhs evaluated
   // first, plus this should improve codegen a little.
@@ -3043,7 +3043,7 @@ Value *ScalarExprEmitter::VisitBinLAnd(const BinaryOperator *E) {
   // Emit an unconditional branch from this block to ContBlock.
   {
     // There is no need to emit line number for unconditional branch.
-    ApplyDebugLocation DL(CGF);
+    auto NL = ApplyDebugLocation::CreateEmpty(CGF);
     CGF.EmitBlock(ContBlock);
   }
   // Insert an entry into the phi node for the edge with the value of RHSCond.
@@ -3393,13 +3393,8 @@ Value *CodeGenFunction::EmitScalarExpr(const Expr *E, bool IgnoreResultAssign) {
   assert(E && hasScalarEvaluationKind(E->getType()) &&
          "Invalid scalar expression to emit");
 
-  if (isa<CXXDefaultArgExpr>(E))
-    disableDebugInfo();
-  Value *V = ScalarExprEmitter(*this, IgnoreResultAssign)
-    .Visit(const_cast<Expr*>(E));
-  if (isa<CXXDefaultArgExpr>(E))
-    enableDebugInfo();
-  return V;
+  return ScalarExprEmitter(*this, IgnoreResultAssign)
+      .Visit(const_cast<Expr *>(E));
 }
 
 /// EmitScalarConversion - Emit a conversion from the specified type to the

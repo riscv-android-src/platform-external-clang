@@ -509,14 +509,11 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
       
       // Look for the function declaration where the default argument was
       // actually written, which may be a declaration prior to Old.
-      for (FunctionDecl *Older = Old->getPreviousDecl();
-           Older; Older = Older->getPreviousDecl()) {
-        if (!Older->getParamDecl(p)->hasDefaultArg())
-          break;
-        
+      for (auto Older = Old; OldParam->hasInheritedDefaultArg();) {
+        Older = Older->getPreviousDecl();
         OldParam = Older->getParamDecl(p);
-      }        
-      
+      }
+
       Diag(OldParam->getLocation(), diag::note_previous_definition)
         << OldParam->getDefaultArgRange();
     } else if (OldParamHasDfl) {
@@ -524,7 +521,9 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
       // It's important to use getInit() here;  getDefaultArg()
       // strips off any top-level ExprWithCleanups.
       NewParam->setHasInheritedDefaultArg();
-      if (OldParam->hasUninstantiatedDefaultArg())
+      if (OldParam->hasUnparsedDefaultArg())
+        NewParam->setUnparsedDefaultArg();
+      else if (OldParam->hasUninstantiatedDefaultArg())
         NewParam->setUninstantiatedDefaultArg(
                                       OldParam->getUninstantiatedDefaultArg());
       else
@@ -4787,9 +4786,9 @@ static void checkDLLAttribute(Sema &S, CXXRecordDecl *Class) {
         continue;
       }
 
-      if (MD->isInlined() && ClassImported &&
+      if (MD->isInlined() &&
           !S.Context.getTargetInfo().getCXXABI().isMicrosoft()) {
-        // MinGW does not import inline functions.
+        // MinGW does not import or export inline methods.
         continue;
       }
     }
@@ -4822,7 +4821,13 @@ static void checkDLLAttribute(Sema &S, CXXRecordDecl *Class) {
         // defaulted methods, and the copy and move assignment operators. The
         // latter are exported even if they are trivial, because the address of
         // an operator can be taken and should compare equal accross libraries.
+        DiagnosticErrorTrap Trap(S.Diags);
         S.MarkFunctionReferenced(Class->getLocation(), MD);
+        if (Trap.hasErrorOccurred()) {
+          S.Diag(ClassAttr->getLocation(), diag::note_due_to_dllexported_class)
+              << Class->getName() << !S.getLangOpts().CPlusPlus11;
+          break;
+        }
 
         // There is no later point when we will see the definition of this
         // function, so pass it to the consumer now.
@@ -7368,7 +7373,7 @@ bool Sema::isStdInitializerList(QualType Ty, QualType *Element) {
     StdInitializerList = Template;
   }
 
-  if (Template != StdInitializerList)
+  if (Template->getCanonicalDecl() != StdInitializerList->getCanonicalDecl())
     return false;
 
   // This is an instance of std::initializer_list. Find the argument type.
@@ -9064,7 +9069,7 @@ private:
     ASTContext &Context = SemaRef.Context;
     DeclarationName Name = Context.DeclarationNames.getCXXConstructorName(
         Context.getCanonicalType(Context.getRecordType(Base)));
-    DeclContext::lookup_const_result Decls = Derived->lookup(Name);
+    DeclContext::lookup_result Decls = Derived->lookup(Name);
     return Decls.empty() ? Derived->getLocation() : Decls[0]->getLocation();
   }
 
@@ -9447,8 +9452,8 @@ namespace {
 //  copy/move operators. These classes serve as factory functions and help us
 //  avoid using the same Expr* in the AST twice.
 class ExprBuilder {
-  ExprBuilder(const ExprBuilder&) LLVM_DELETED_FUNCTION;
-  ExprBuilder &operator=(const ExprBuilder&) LLVM_DELETED_FUNCTION;
+  ExprBuilder(const ExprBuilder&) = delete;
+  ExprBuilder &operator=(const ExprBuilder&) = delete;
 
 protected:
   static Expr *assertNotNull(Expr *E) {

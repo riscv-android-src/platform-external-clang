@@ -128,45 +128,85 @@ bool Sema::isSimpleTypeSpecifier(tok::TokenKind Kind) const {
   return false;
 }
 
+namespace {
+enum class UnqualifiedTypeNameLookupResult {
+  NotFound,
+  FoundNonType,
+  FoundType
+};
+} // namespace
+
+/// \brief Tries to perform unqualified lookup of the type decls in bases for
+/// dependent class.
+/// \return \a NotFound if no any decls is found, \a FoundNotType if found not a
+/// type decl, \a FoundType if only type decls are found.
+static UnqualifiedTypeNameLookupResult
+lookupUnqualifiedTypeNameInBase(Sema &S, const IdentifierInfo &II,
+                                SourceLocation NameLoc,
+                                const CXXRecordDecl *RD) {
+  if (!RD->hasDefinition())
+    return UnqualifiedTypeNameLookupResult::NotFound;
+  // Look for type decls in base classes.
+  UnqualifiedTypeNameLookupResult FoundTypeDecl =
+      UnqualifiedTypeNameLookupResult::NotFound;
+  for (const auto &Base : RD->bases()) {
+    const CXXRecordDecl *BaseRD = nullptr;
+    if (auto *BaseTT = Base.getType()->getAs<TagType>())
+      BaseRD = BaseTT->getAsCXXRecordDecl();
+    else if (auto *TST = Base.getType()->getAs<TemplateSpecializationType>()) {
+      // Look for type decls in dependent base classes that have known primary
+      // templates.
+      if (!TST || !TST->isDependentType())
+        continue;
+      auto *TD = TST->getTemplateName().getAsTemplateDecl();
+      if (!TD)
+        continue;
+      auto *BasePrimaryTemplate =
+          dyn_cast_or_null<CXXRecordDecl>(TD->getTemplatedDecl());
+      if (!BasePrimaryTemplate)
+        continue;
+      BaseRD = BasePrimaryTemplate;
+    }
+    if (BaseRD) {
+      for (NamedDecl *ND : BaseRD->lookup(&II)) {
+        if (!isa<TypeDecl>(ND))
+          return UnqualifiedTypeNameLookupResult::FoundNonType;
+        FoundTypeDecl = UnqualifiedTypeNameLookupResult::FoundType;
+      }
+      if (FoundTypeDecl == UnqualifiedTypeNameLookupResult::NotFound) {
+        switch (lookupUnqualifiedTypeNameInBase(S, II, NameLoc, BaseRD)) {
+        case UnqualifiedTypeNameLookupResult::FoundNonType:
+          return UnqualifiedTypeNameLookupResult::FoundNonType;
+        case UnqualifiedTypeNameLookupResult::FoundType:
+          FoundTypeDecl = UnqualifiedTypeNameLookupResult::FoundType;
+          break;
+        case UnqualifiedTypeNameLookupResult::NotFound:
+          break;
+        }
+      }
+    }
+  }
+
+  return FoundTypeDecl;
+}
+
 static ParsedType recoverFromTypeInKnownDependentBase(Sema &S,
                                                       const IdentifierInfo &II,
                                                       SourceLocation NameLoc) {
-  // Find the first parent class template context, if any.
-  // FIXME: Perform the lookup in all enclosing class templates.
+  // Lookup in the parent class template context, if any.
   const CXXRecordDecl *RD = nullptr;
-  for (DeclContext *DC = S.CurContext; DC; DC = DC->getParent()) {
+  UnqualifiedTypeNameLookupResult FoundTypeDecl =
+      UnqualifiedTypeNameLookupResult::NotFound;
+  for (DeclContext *DC = S.CurContext;
+       DC && FoundTypeDecl == UnqualifiedTypeNameLookupResult::NotFound;
+       DC = DC->getParent()) {
+    // Look for type decls in dependent base classes that have known primary
+    // templates.
     RD = dyn_cast<CXXRecordDecl>(DC);
     if (RD && RD->getDescribedClassTemplate())
-      break;
+      FoundTypeDecl = lookupUnqualifiedTypeNameInBase(S, II, NameLoc, RD);
   }
-  if (!RD)
-    return ParsedType();
-
-  // Look for type decls in dependent base classes that have known primary
-  // templates.
-  bool FoundTypeDecl = false;
-  for (const auto &Base : RD->bases()) {
-    auto *TST = Base.getType()->getAs<TemplateSpecializationType>();
-    if (!TST || !TST->isDependentType())
-      continue;
-    auto *TD = TST->getTemplateName().getAsTemplateDecl();
-    if (!TD)
-      continue;
-    auto *BasePrimaryTemplate =
-        dyn_cast_or_null<CXXRecordDecl>(TD->getTemplatedDecl());
-    if (!BasePrimaryTemplate)
-      continue;
-    // FIXME: Allow lookup into non-dependent bases of dependent bases, possibly
-    // by calling or integrating with the main LookupQualifiedName mechanism.
-    for (NamedDecl *ND : BasePrimaryTemplate->lookup(&II)) {
-      if (FoundTypeDecl)
-        return ParsedType();
-      FoundTypeDecl = isa<TypeDecl>(ND);
-      if (!FoundTypeDecl)
-        return ParsedType();
-    }
-  }
-  if (!FoundTypeDecl)
+  if (FoundTypeDecl != UnqualifiedTypeNameLookupResult::FoundType)
     return ParsedType();
 
   // We found some types in dependent base classes.  Recover as if the user
@@ -3472,7 +3512,7 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
     return ActOnFriendTypeDecl(S, DS, TemplateParams);
   }
 
-  CXXScopeSpec &SS = DS.getTypeSpecScope();
+  const CXXScopeSpec &SS = DS.getTypeSpecScope();
   bool IsExplicitSpecialization =
     !TemplateParams.empty() && TemplateParams.back()->size() == 0;
   if (Tag && SS.isNotEmpty() && !Tag->isCompleteDefinition() &&
@@ -3499,7 +3539,8 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
         DS.getStorageClassSpec() != DeclSpec::SCS_typedef) {
       if (getLangOpts().CPlusPlus ||
           Record->getDeclContext()->isRecord())
-        return BuildAnonymousStructOrUnion(S, DS, AS, Record, Context.getPrintingPolicy());
+        return BuildAnonymousStructOrUnion(S, DS, AS, Record,
+                                           Context.getPrintingPolicy());
 
       DeclaresAnything = false;
     }
@@ -3727,8 +3768,7 @@ static bool InjectAnonymousStructOrUnionMembers(Sema &SemaRef, Scope *S,
         //   anonymous union is declared.
         unsigned OldChainingSize = Chaining.size();
         if (IndirectFieldDecl *IF = dyn_cast<IndirectFieldDecl>(VD))
-          for (auto *PI : IF->chain())
-            Chaining.push_back(PI);
+          Chaining.append(IF->chain_begin(), IF->chain_end());
         else
           Chaining.push_back(VD);
 
@@ -5578,8 +5618,9 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
         }
       }
     } else {
-      assert(D.getName().getKind() != UnqualifiedId::IK_TemplateId &&
-             "should have a 'template<>' for this decl");
+      assert(
+          (Invalid || D.getName().getKind() != UnqualifiedId::IK_TemplateId) &&
+          "should have a 'template<>' for this decl");
     }
 
     if (IsVariableTemplateSpecialization) {
@@ -6911,8 +6952,10 @@ static void checkIsValidOpenCLKernelParameter(
 
       // We have an error, now let's go back up through history and show where
       // the offending field came from
-      for (ArrayRef<const FieldDecl *>::const_iterator I = HistoryStack.begin() + 1,
-             E = HistoryStack.end(); I != E; ++I) {
+      for (ArrayRef<const FieldDecl *>::const_iterator
+               I = HistoryStack.begin() + 1,
+               E = HistoryStack.end();
+           I != E; ++I) {
         const FieldDecl *OuterField = *I;
         S.Diag(OuterField->getLocation(), diag::note_within_field_of_type)
           << OuterField->getType();
@@ -7415,7 +7458,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       D.setRedeclaration(CheckFunctionDeclaration(S, NewFD, Previous,
                                                   isExplicitSpecialization));
     else if (!Previous.empty())
-      // Make graceful recovery from an invalid redeclaration.
+      // Recover gracefully from an invalid redeclaration.
       D.setRedeclaration(true);
     assert((NewFD->isInvalidDecl() || !D.isRedeclaration() ||
             Previous.getResultKind() != LookupResult::FoundOverloaded) &&
@@ -7556,6 +7599,9 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       if (!NewFD->isInvalidDecl())
         D.setRedeclaration(CheckFunctionDeclaration(S, NewFD, Previous,
                                                     isExplicitSpecialization));
+      else if (!Previous.empty())
+        // Recover gracefully from an invalid redeclaration.
+        D.setRedeclaration(true);
     }
 
     assert((NewFD->isInvalidDecl() || !D.isRedeclaration() ||
@@ -8715,6 +8761,14 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
     CheckVariableDeclarationType(VDecl);
     if (VDecl->isInvalidDecl())
       return;
+
+    // If all looks well, warn if this is a case that will change meaning when
+    // we implement N3922.
+    if (DirectInit && !CXXDirectInit && isa<InitListExpr>(Init)) {
+      Diag(Init->getLocStart(),
+           diag::warn_auto_var_direct_list_init)
+        << FixItHint::CreateInsertion(Init->getLocStart(), "=");
+    }
   }
 
   // dllimport cannot be used on variable definitions.
@@ -9258,6 +9312,8 @@ void Sema::ActOnUninitializedDecl(Decl *RealDecl,
         Var->setInvalidDecl();
         return;
       }
+    } else {
+      return;
     }
 
     // The variable can not have an abstract class type.
@@ -9355,8 +9411,6 @@ void Sema::ActOnCXXForRangeDecl(Decl *D) {
   case SC_OpenCLWorkGroupLocal:
     llvm_unreachable("Unexpected storage class");
   }
-  if (VD->isConstexpr())
-    Error = 5;
   if (Error != -1) {
     Diag(VD->getOuterLocStart(), diag::err_for_range_storage_class)
       << VD->getDeclName() << Error;
@@ -12347,7 +12401,8 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
   if (!InvalidDecl && Mutable) {
     unsigned DiagID = 0;
     if (T->isReferenceType())
-      DiagID = diag::err_mutable_reference;
+      DiagID = getLangOpts().MSVCCompat ? diag::ext_mutable_reference
+                                        : diag::err_mutable_reference;
     else if (T.isConstQualified())
       DiagID = diag::err_mutable_const;
 
@@ -12356,8 +12411,10 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
       if (D && D->getDeclSpec().getStorageClassSpecLoc().isValid())
         ErrLoc = D->getDeclSpec().getStorageClassSpecLoc();
       Diag(ErrLoc, DiagID);
-      Mutable = false;
-      InvalidDecl = true;
+      if (DiagID != diag::ext_mutable_reference) {
+        Mutable = false;
+        InvalidDecl = true;
+      }
     }
   }
 

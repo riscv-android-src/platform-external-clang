@@ -199,6 +199,11 @@ namespace sema {
   class TemplateDeductionInfo;
 }
 
+namespace threadSafety {
+  class BeforeSet;
+  void threadSafetyCleanup(BeforeSet* Cache);
+}
+
 // FIXME: No way to easily map from TemplateTypeParmTypes to
 // TemplateTypeParmDecls, so we have this horrible PointerUnion.
 typedef std::pair<llvm::PointerUnion<const TemplateTypeParmType*, NamedDecl*>,
@@ -206,8 +211,8 @@ typedef std::pair<llvm::PointerUnion<const TemplateTypeParmType*, NamedDecl*>,
 
 /// Sema - This implements semantic analysis and AST building for C.
 class Sema {
-  Sema(const Sema &) LLVM_DELETED_FUNCTION;
-  void operator=(const Sema &) LLVM_DELETED_FUNCTION;
+  Sema(const Sema &) = delete;
+  void operator=(const Sema &) = delete;
 
   ///\brief Source of additional semantic information.
   ExternalSemaSource *ExternalSource;
@@ -3660,7 +3665,6 @@ public:
     Scope *S;
     UnqualifiedId &Id;
     Decl *ObjCImpDecl;
-    bool HasTrailingLParen;
   };
 
   ExprResult BuildMemberReferenceExpr(
@@ -3699,8 +3703,7 @@ public:
                                    CXXScopeSpec &SS,
                                    SourceLocation TemplateKWLoc,
                                    UnqualifiedId &Member,
-                                   Decl *ObjCImpDecl,
-                                   bool HasTrailingLParen);
+                                   Decl *ObjCImpDecl);
 
   void ActOnDefaultCtorInitializers(Decl *CDtorDecl);
   bool ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
@@ -4493,7 +4496,7 @@ public:
   void DeclareGlobalAllocationFunction(DeclarationName Name, QualType Return,
                                        QualType Param1,
                                        QualType Param2 = QualType(),
-                                       bool addMallocAttr = false);
+                                       bool addRestrictAttr = false);
 
   bool FindDeallocationFunction(SourceLocation StartLoc, CXXRecordDecl *RD,
                                 DeclarationName Name, FunctionDecl* &Operator,
@@ -4558,8 +4561,6 @@ public:
                                           ParsedType &ObjectType,
                                           bool &MayBePseudoDestructor);
 
-  ExprResult DiagnoseDtorReference(SourceLocation NameLoc, Expr *MemExpr);
-
   ExprResult BuildPseudoDestructorExpr(Expr *Base,
                                        SourceLocation OpLoc,
                                        tok::TokenKind OpKind,
@@ -4567,8 +4568,7 @@ public:
                                        TypeSourceInfo *ScopeType,
                                        SourceLocation CCLoc,
                                        SourceLocation TildeLoc,
-                                     PseudoDestructorTypeStorage DestroyedType,
-                                       bool HasTrailingLParen);
+                                     PseudoDestructorTypeStorage DestroyedType);
 
   ExprResult ActOnPseudoDestructorExpr(Scope *S, Expr *Base,
                                        SourceLocation OpLoc,
@@ -4577,15 +4577,13 @@ public:
                                        UnqualifiedId &FirstTypeName,
                                        SourceLocation CCLoc,
                                        SourceLocation TildeLoc,
-                                       UnqualifiedId &SecondTypeName,
-                                       bool HasTrailingLParen);
+                                       UnqualifiedId &SecondTypeName);
 
   ExprResult ActOnPseudoDestructorExpr(Scope *S, Expr *Base,
                                        SourceLocation OpLoc,
                                        tok::TokenKind OpKind,
                                        SourceLocation TildeLoc,
-                                       const DeclSpec& DS,
-                                       bool HasTrailingLParen);
+                                       const DeclSpec& DS);
 
   /// MaybeCreateExprWithCleanups - If the current full-expression
   /// requires any cleanups, surround it with a ExprWithCleanups node.
@@ -6607,10 +6605,10 @@ public:
         ArrayRef<TemplateArgument> TemplateArgs = ArrayRef<TemplateArgument>(),
         sema::TemplateDeductionInfo *DeductionInfo = nullptr);
 
-    InstantiatingTemplate(const InstantiatingTemplate&) LLVM_DELETED_FUNCTION;
+    InstantiatingTemplate(const InstantiatingTemplate&) = delete;
 
     InstantiatingTemplate&
-    operator=(const InstantiatingTemplate&) LLVM_DELETED_FUNCTION;
+    operator=(const InstantiatingTemplate&) = delete;
   };
 
   void PrintInstantiationStack();
@@ -6708,6 +6706,7 @@ public:
 
   /// \brief Worker object for performing CFG-based warnings.
   sema::AnalysisBasedWarnings AnalysisWarnings;
+  threadSafety::BeforeSet *ThreadSafetyDeclCache;
 
   /// \brief An entity for which implicit template instantiation is required.
   ///
@@ -8585,6 +8584,8 @@ public:
     FST_Strftime,
     FST_Strfmon,
     FST_Kprintf,
+    FST_FreeBSDKPrintf,
+    FST_OSTrace,
     FST_Unknown
   };
   static FormatStringType GetFormatStringType(const FormatAttr *Format);

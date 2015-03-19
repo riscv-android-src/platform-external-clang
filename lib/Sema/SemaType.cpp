@@ -868,7 +868,9 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     else
       Result = Context.DoubleTy;
 
-    if (S.getLangOpts().OpenCL && !S.getOpenCLOptions().cl_khr_fp64) {
+    if (S.getLangOpts().OpenCL &&
+        !((S.getLangOpts().OpenCLVersion >= 120) ||
+          S.getOpenCLOptions().cl_khr_fp64)) {
       S.Diag(DS.getTypeSpecTypeLoc(), diag::err_double_requires_fp64);
       declarator.setInvalidType(true);
     }
@@ -1808,13 +1810,7 @@ QualType Sema::BuildMemberPointerType(QualType T, QualType Class,
   // exception specification.
   if (CheckDistantExceptionSpec(T)) {
     Diag(Loc, diag::err_distant_exception_spec);
-
-    // FIXME: If we're doing this as part of template instantiation,
-    // we should return immediately.
-
-    // Build the type anyway, but use the canonical type so that the
-    // exception specifiers are stripped off.
-    T = Context.getCanonicalType(T);
+    return QualType();
   }
 
   // C++ 8.3.3p3: A pointer to member shall not point to ... a member

@@ -912,7 +912,8 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
       .Case("objc_dictionary_literals", LangOpts.ObjC2)
       .Case("objc_boxed_expressions", LangOpts.ObjC2)
       .Case("arc_cf_code_audited", true)
-      .Case("objc_bridge_id", LangOpts.ObjC2)
+      .Case("objc_bridge_id", true)
+      .Case("objc_bridge_id_on_typedefs", true)
       // C11 features
       .Case("c_alignas", LangOpts.C11)
       .Case("c_alignof", LangOpts.C11)
@@ -1179,7 +1180,7 @@ static bool EvaluateHasIncludeNext(Token &Tok,
   // __has_include_next is like __has_include, except that we start
   // searching after the current found directory.  If we can't do this,
   // issue a diagnostic.
-  // FIXME: Factor out duplication wiht
+  // FIXME: Factor out duplication with 
   // Preprocessor::HandleIncludeNextDirective.
   const DirectoryLookup *Lookup = PP.GetCurDirLookup();
   const FileEntry *LookupFromFile = nullptr;

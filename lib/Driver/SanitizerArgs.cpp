@@ -47,7 +47,8 @@ ID = ALIAS, ID##Group = 1 << SO_##ID##Group,
   SupportsCoverage = Address | Memory | Leak | Undefined | Integer,
   RecoverableByDefault = Undefined | Integer,
   Unrecoverable = Address | Unreachable | Return,
-  LegacyFsanitizeRecoverMask = Undefined | Integer
+  LegacyFsanitizeRecoverMask = Undefined | Integer,
+  NeedsLTO = CFIVptr,
 };
 }
 
@@ -127,7 +128,7 @@ static unsigned getToolchainUnsupportedKinds(const ToolChain &TC) {
   if (!(IsLinux && (IsX86_64 || IsMIPS64))) {
     Unsupported |= Memory | DataFlow;
   }
-  if (!((IsLinux || IsFreeBSD) && IsX86_64)) {
+  if (!((IsLinux || IsFreeBSD) && (IsX86_64 || IsMIPS64))) {
     Unsupported |= Thread;
   }
   if (!(IsLinux && (IsX86 || IsX86_64))) {
@@ -148,10 +149,14 @@ bool SanitizerArgs::needsUnwindTables() const {
   return hasOneOf(Sanitizers, NeedsUnwindTables);
 }
 
+bool SanitizerArgs::needsLTO() const {
+  return hasOneOf(Sanitizers, CFIVptr);
+}
+
 void SanitizerArgs::clear() {
   Sanitizers.clear();
   RecoverableSanitizers.clear();
-  BlacklistFile = "";
+  BlacklistFiles.clear();
   SanitizeCoverage = 0;
   MsanTrackOrigins = 0;
   AsanFieldPadding = 0;
@@ -171,6 +176,8 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
                                 // Used to deduplicate diagnostics.
   unsigned Kinds = 0;
   unsigned NotSupported = getToolchainUnsupportedKinds(TC);
+  ToolChain::RTTIMode RTTIMode = TC.getRTTIMode();
+
   const Driver &D = TC.getDriver();
   for (ArgList::const_reverse_iterator I = Args.rbegin(), E = Args.rend();
        I != E; ++I) {
@@ -193,6 +200,28 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
       }
       Add &= ~NotSupported;
 
+      // Test for -fno-rtti + explicit -fsanitizer=vptr before expanding groups
+      // so we don't error out if -fno-rtti and -fsanitize=undefined were
+      // passed.
+      if (Add & SanitizeKind::Vptr &&
+          (RTTIMode == ToolChain::RM_DisabledImplicitly ||
+           RTTIMode == ToolChain::RM_DisabledExplicitly)) {
+        if (RTTIMode == ToolChain::RM_DisabledImplicitly)
+          // Warn about not having rtti enabled if the vptr sanitizer is
+          // explicitly enabled
+          D.Diag(diag::warn_drv_disabling_vptr_no_rtti_default);
+        else {
+          const llvm::opt::Arg *NoRTTIArg = TC.getRTTIArg();
+          assert(NoRTTIArg &&
+                 "RTTI disabled explicitly but we have no argument!");
+          D.Diag(diag::err_drv_argument_not_allowed_with)
+              << "-fsanitize=vptr" << NoRTTIArg->getAsString(Args);
+        }
+
+        // Take out the Vptr sanitizer from the enabled sanitizers
+        AllRemove |= SanitizeKind::Vptr;
+      }
+
       Add = expandGroups(Add);
       // Group expansion may have enabled a sanitizer which is disabled later.
       Add &= ~AllRemove;
@@ -208,6 +237,15 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
     }
   }
   addAllOf(Sanitizers, Kinds);
+
+  // We disable the vptr sanitizer if it was enabled by group expansion but RTTI
+  // is disabled.
+  if (Sanitizers.has(SanitizerKind::Vptr) &&
+      (RTTIMode == ToolChain::RM_DisabledImplicitly ||
+       RTTIMode == ToolChain::RM_DisabledExplicitly)) {
+    Kinds &= ~SanitizeKind::Vptr;
+    Sanitizers.set(SanitizerKind::Vptr, 0);
+  }
 
   // Parse -f(no-)?sanitize-recover flags.
   unsigned RecoverableKinds = RecoverableByDefault;
@@ -285,30 +323,34 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
   // -f(-no)sanitize=leak should change whether leak detection is enabled by
   // default in ASan?
 
-  // Parse -f(no-)sanitize-blacklist options.
-  if (Arg *BLArg = Args.getLastArg(options::OPT_fsanitize_blacklist,
-                                   options::OPT_fno_sanitize_blacklist)) {
-    if (BLArg->getOption().matches(options::OPT_fsanitize_blacklist)) {
-      std::string BLPath = BLArg->getValue();
-      if (llvm::sys::fs::exists(BLPath)) {
-        // Validate the blacklist format.
-        std::string BLError;
-        std::unique_ptr<llvm::SpecialCaseList> SCL(
-            llvm::SpecialCaseList::create(BLPath, BLError));
-        if (!SCL.get())
-          D.Diag(clang::diag::err_drv_malformed_sanitizer_blacklist) << BLError;
-        else
-          BlacklistFile = BLPath;
-      } else {
-        D.Diag(clang::diag::err_drv_no_such_file) << BLPath;
-      }
-    }
-  } else {
-    // If no -fsanitize-blacklist option is specified, try to look up for
-    // blacklist in the resource directory.
+  // Setup blacklist files.
+  // Add default blacklist from resource directory.
+  {
     std::string BLPath;
     if (getDefaultBlacklist(D, BLPath) && llvm::sys::fs::exists(BLPath))
-      BlacklistFile = BLPath;
+      BlacklistFiles.push_back(BLPath);
+  }
+  // Parse -f(no-)sanitize-blacklist options.
+  for (const auto *Arg : Args) {
+    if (Arg->getOption().matches(options::OPT_fsanitize_blacklist)) {
+      Arg->claim();
+      std::string BLPath = Arg->getValue();
+      if (llvm::sys::fs::exists(BLPath))
+        BlacklistFiles.push_back(BLPath);
+      else
+        D.Diag(clang::diag::err_drv_no_such_file) << BLPath;
+    } else if (Arg->getOption().matches(options::OPT_fno_sanitize_blacklist)) {
+      Arg->claim();
+      BlacklistFiles.clear();
+    }
+  }
+  // Validate blacklists format.
+  {
+    std::string BLError;
+    std::unique_ptr<llvm::SpecialCaseList> SCL(
+        llvm::SpecialCaseList::create(BlacklistFiles, BLError));
+    if (!SCL.get())
+      D.Diag(clang::diag::err_drv_malformed_sanitizer_blacklist) << BLError;
   }
 
   // Parse -f[no-]sanitize-memory-track-origins[=level] options.
@@ -318,7 +360,7 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
                             options::OPT_fsanitize_memory_track_origins,
                             options::OPT_fno_sanitize_memory_track_origins)) {
       if (A->getOption().matches(options::OPT_fsanitize_memory_track_origins)) {
-        MsanTrackOrigins = 1;
+        MsanTrackOrigins = 2;
       } else if (A->getOption().matches(
                      options::OPT_fno_sanitize_memory_track_origins)) {
         MsanTrackOrigins = 0;
@@ -405,9 +447,9 @@ void SanitizerArgs::addArgs(const llvm::opt::ArgList &Args,
   if (UbsanTrapOnError)
     CmdArgs.push_back("-fsanitize-undefined-trap-on-error");
 
-  if (!BlacklistFile.empty()) {
+  for (const auto &BLPath : BlacklistFiles) {
     SmallString<64> BlacklistOpt("-fsanitize-blacklist=");
-    BlacklistOpt += BlacklistFile;
+    BlacklistOpt += BLPath;
     CmdArgs.push_back(Args.MakeArgString(BlacklistOpt));
   }
 
@@ -420,8 +462,13 @@ void SanitizerArgs::addArgs(const llvm::opt::ArgList &Args,
   if (SanitizeCoverage)
     CmdArgs.push_back(Args.MakeArgString("-fsanitize-coverage=" +
                                          llvm::utostr(SanitizeCoverage)));
-  // Workaround for PR16386.
-  if (Sanitizers.has(SanitizerKind::Memory))
+  // MSan: Workaround for PR16386.
+  // ASan: This is mainly to help LSan with cases such as
+  // https://code.google.com/p/address-sanitizer/issues/detail?id=373
+  // We can't make this conditional on -fsanitize=leak, as that flag shouldn't
+  // affect compilation.
+  if (Sanitizers.has(SanitizerKind::Memory) ||
+      Sanitizers.has(SanitizerKind::Address))
     CmdArgs.push_back(Args.MakeArgString("-fno-assume-sane-operator-new"));
 }
 
