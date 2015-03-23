@@ -236,6 +236,13 @@ $(generated_sources)/include/clang/Driver/Options.inc: $(CLANG_ROOT_PATH)/includ
 	$(call transform-td-to-out,opt-parser-defs)
 endif
 
+ifneq ($(findstring arm_neon.h,$(TBLGEN_TABLES)),)
+LOCAL_GENERATED_SOURCES += $(generated_sources)/include/clang/Basic/arm_neon.h
+$(generated_sources)/include/clang/Basic/arm_neon.h: TBLGEN_LOCAL_MODULE := $(LOCAL_MODULE)
+$(generated_sources)/include/clang/Basic/arm_neon.h: $(CLANG_ROOT_PATH)/include/clang/Basic/arm_neon.td $(CLANG_TBLGEN)
+	$(call transform-clang-td-to-out,arm-neon)
+endif
+
 LOCAL_C_INCLUDES += $(generated_sources)/include
 
 endif
