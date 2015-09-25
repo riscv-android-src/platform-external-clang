@@ -7,6 +7,7 @@ clang_static_analyzer_core_TBLGEN_TABLES := \
   CommentNodes.inc \
   DeclNodes.inc \
   DiagnosticCommonKinds.inc \
+  DiagnosticFrontendKinds.inc \
   StmtNodes.inc
 
 clang_static_analyzer_core_SRC_FILES := \

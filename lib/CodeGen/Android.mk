@@ -61,6 +61,7 @@ clang_codegen_SRC_FILES := \
   ItaniumCXXABI.cpp \
   MicrosoftCXXABI.cpp \
   ModuleBuilder.cpp \
+  ObjectFilePCHContainerOperations.cpp \
   SanitizerMetadata.cpp \
   TargetInfo.cpp
 

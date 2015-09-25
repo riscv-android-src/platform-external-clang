@@ -44,6 +44,7 @@ clang_frontend_SRC_FILES := \
   LogDiagnosticPrinter.cpp \
   ModuleDependencyCollector.cpp \
   MultiplexConsumer.cpp \
+  PCHContainerOperations.cpp \
   PrintPreprocessedOutput.cpp \
   SerializedDiagnosticPrinter.cpp \
   SerializedDiagnosticReader.cpp \
