@@ -13,6 +13,32 @@ ifneq "$(words $(FORCE_BUILD_LLVM_DEBUG))$(words $(filter-out true false,$(FORCE
   $(error FORCE_BUILD_LLVM_DEBUG may only be true, false, or unset)
 endif
 
+.PHONY: clang-toolchain
+clang-toolchain: \
+    $(TARGET_OUT_HEADERS)/clang/arm_neon.h \
+    clang \
+    FileCheck \
+    llvm-as \
+    llvm-dis \
+    llvm-link \
+    LLVMgold \
+    libprofile_rt \
+    libprofile_rt_32 \
+    libasan \
+    libasan_32 \
+    libasan_cxx \
+    libasan_cxx_32 \
+    libubsan_standalone \
+    libubsan_standalone_32 \
+    libubsan_standalone_cxx \
+    libubsan_standalone_cxx_32 \
+    libtsan \
+    libtsan_cxx \
+
+ifeq ($(TARGET_ARCH),arm)
+clang-toolchain: $(ADDRESS_SANITIZER_RUNTIME_LIBRARY)
+endif
+
 include $(CLEAR_VARS)
 
 subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
