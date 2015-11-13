@@ -30,13 +30,13 @@ def android_path(path=''):
 
 
 def build_path(subdir):
-    # OUT_DIR will be set when built on the build server. In that case we need
-    # to make sure our build directories are in OUT_DIR rather than
-    # ANDROID_BUILD_TOP.
-    if 'OUT_DIR' in ORIG_ENV:
-        return os.path.join(ORIG_ENV['OUT_DIR'], subdir)
-    else:
-        return android_path(subdir)
+    # Our multistage build directories will be placed under OUT_DIR if it is in
+    # the environment. By default they will be placed under
+    # $ANDROID_BUILD_TOP/out.
+    top_out = ORIG_ENV.get('OUT_DIR', android_path('out'))
+    if not os.path.isabs(top_out):
+        top_out = os.path.realpath(top_out)
+    return os.path.join(top_out, subdir)
 
 
 def build(out_dir):
