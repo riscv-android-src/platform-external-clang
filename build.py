@@ -126,17 +126,21 @@ def install_built_host_files(build_dir, install_dir, host):
     is_windows = host.startswith('windows')
     bin_ext = '.exe' if is_windows else ''
     lib_ext = '.dll' if is_windows else '.so'
-    built_files = (
+    built_files = [
         'bin/clang' + bin_ext,
         'bin/clang++' + bin_ext,
-        'bin/FileCheck' + bin_ext,
-        'bin/llvm-as' + bin_ext,
-        'bin/llvm-dis' + bin_ext,
-        'bin/llvm-link' + bin_ext,
-        'lib64/LLVMgold' + lib_ext,
-        'lib64/libc++' + lib_ext,
-        'lib64/libLLVM' + lib_ext,
-    )
+    ]
+    if host != 'windows-x86':
+        built_files.extend([
+            'bin/FileCheck' + bin_ext,
+            'bin/llvm-as' + bin_ext,
+            'bin/llvm-dis' + bin_ext,
+            'bin/llvm-link' + bin_ext,
+            'lib64/libc++' + lib_ext,
+            'lib64/libLLVM' + lib_ext,
+            'lib64/LLVMgold' + lib_ext,
+        ])
+
     for built_file in built_files:
         dirname = os.path.dirname(built_file)
         install_path = os.path.join(install_dir, dirname)
@@ -239,8 +243,19 @@ def install_sanitizers(build_dir, install_dir, host):
     headers_src = android_path('external/compiler-rt/include/sanitizer')
     clang_lib = os.path.join(install_dir, 'lib/clang', short_version())
     headers_dst = os.path.join(clang_lib, 'include/sanitizer')
+    lib_dst = os.path.join(clang_lib, 'lib/linux')
     install_directory(headers_src, headers_dst)
 
+    if host == 'linnux-x86':
+        install_host_sanitizers(build_dir, host, lib_dst)
+
+    product_base_dir = os.path.join(build_dir, 'target/product')
+    lib32_dir = os.path.join(product_base_dir, 'generic/system/lib')
+    lib32_name = 'libclang_rt.asan-arm-android.so'
+    install_file(os.path.join(lib32_dir, lib32_name), lib_dst)
+
+
+def install_host_sanitizers(build_dir, host, lib_dst):
     # Tuples of (name, multilib).
     libs = (
         ('asan', True),
@@ -253,7 +268,6 @@ def install_sanitizers(build_dir, install_dir, host):
 
     obj32 = os.path.join(build_dir, 'host', host, 'obj32/STATIC_LIBRARIES')
     obj64 = os.path.join(build_dir, 'host', host, 'obj/STATIC_LIBRARIES')
-    lib_dst = os.path.join(clang_lib, 'lib/linux')
     for lib, is_multilib in libs:
         built_lib_name = 'lib{}.a'.format(lib)
 
@@ -266,11 +280,6 @@ def install_sanitizers(build_dir, install_dir, host):
             lib32_name = 'libclang_rt.{}-i686.a'
             built_lib32 = os.path.join(obj32_dir, built_lib_name)
             install_file(built_lib32, os.path.join(lib_dst, lib32_name))
-
-    product_base_dir = os.path.join(build_dir, 'target/product')
-    lib32_dir = os.path.join(product_base_dir, 'generic/system/lib')
-    lib32_name = 'libclang_rt.asan-arm-android.so'
-    install_file(os.path.join(lib32_dir, lib32_name), lib_dst)
 
 
 def install_license_files(install_dir):
@@ -339,15 +348,15 @@ def main():
     if args.multi_stage:
         raise NotImplementedError
 
-    # TODO(danalbert): Package Windows as part of the Linux build.
-    # It looks like right now the build step isn't building the Windows clang.
     if sys.platform.startswith('linux'):
-        host = 'linux-x86'
+        hosts = ['linux-x86', 'windows-x86']
     elif sys.platform == 'darwin':
-        host = 'darwin-x86'
+        hosts = ['darwin-x86']
     else:
         raise RuntimeError('Unsupported host: {}'.format(sys.platform))
-    package_toolchain(final_out_dir, args.build_name, host)
+
+    for host in hosts:
+        package_toolchain(final_out_dir, args.build_name, host)
 
 
 if __name__ == '__main__':

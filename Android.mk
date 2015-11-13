@@ -35,6 +35,10 @@ clang-toolchain: \
     libtsan \
     libtsan_cxx \
 
+ifneq ($(HOST_OS),darwin)
+clang-toolchain: host_cross_clang
+endif
+
 ifeq ($(TARGET_ARCH),arm)
 clang-toolchain: $(ADDRESS_SANITIZER_RUNTIME_LIBRARY)
 endif
