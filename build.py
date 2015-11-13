@@ -65,7 +65,7 @@ def install_directory(src, dst):
     shutil.copytree(src, dst)
 
 
-def build(out_dir):
+def build(out_dir, prebuilts_path=None):
     products = (
         'aosp_arm',
         'aosp_arm64',
@@ -75,10 +75,10 @@ def build(out_dir):
         'aosp_x86_64',
     )
     for product in products:
-        build_product(out_dir, product)
+        build_product(out_dir, product, prebuilts_path)
 
 
-def build_product(out_dir, product):
+def build_product(out_dir, product, prebuilts_path=None):
     env = dict(ORIG_ENV)
     env['OUT_DIR'] = out_dir
     env['DISABLE_LLVM_DEVICE_BUILDS'] = 'true'
@@ -89,10 +89,14 @@ def build_product(out_dir, product):
     env['TARGET_BUILD_VARIANT'] = 'userdebug'
     env['TARGET_PRODUCT'] = product
 
+    overrides = []
+    if prebuilts_path is not None:
+        overrides.append('LLVM_PREBUILTS_BASE={}'.format(prebuilts_path))
+
     jobs_arg = '-j{}'.format(multiprocessing.cpu_count())
     targets = ['clang-toolchain']
     subprocess.check_call(
-        ['make', jobs_arg] + targets, cwd=android_path(), env=env)
+        ['make', jobs_arg] + overrides + targets, cwd=android_path(), env=env)
 
 
 def package_toolchain(build_dir, build_name, host):
@@ -330,8 +334,8 @@ def parse_args():
 
     multi_stage_group = parser.add_mutually_exclusive_group()
     multi_stage_group.add_argument(
-        '--multi-stage', action='store_true',
-        help='Perform multi-stage build (disabled by default).')
+        '--multi-stage', action='store_true', default=True,
+        help='Perform multi-stage build (enabled by default).')
     multi_stage_group.add_argument(
         '--no-multi-stage', action='store_false', dest='multi_stage',
         help='Do not perform multi-stage build.')
@@ -342,18 +346,32 @@ def parse_args():
 def main():
     args = parse_args()
 
-    stage_1_out_dir = build_path('stage1')
-    build(out_dir=stage_1_out_dir)
-    final_out_dir = stage_1_out_dir
-    if args.multi_stage:
-        raise NotImplementedError
-
     if sys.platform.startswith('linux'):
         hosts = ['linux-x86', 'windows-x86']
     elif sys.platform == 'darwin':
         hosts = ['darwin-x86']
     else:
         raise RuntimeError('Unsupported host: {}'.format(sys.platform))
+
+    stage_1_out_dir = build_path('stage1')
+    build(out_dir=stage_1_out_dir)
+    final_out_dir = stage_1_out_dir
+    if args.multi_stage:
+        stage_1_install_dir = build_path('stage1-install')
+        for host in hosts:
+            install_dir = os.path.join(
+                stage_1_install_dir, host, short_version())
+
+            # Remove any previously installed toolchain so it doesn't pollute
+            # the build.
+            if os.path.exists(install_dir):
+                shutil.rmtree(install_dir)
+
+            install_toolchain(stage_1_out_dir, install_dir, host)
+
+        stage_2_out_dir = build_path('stage2')
+        build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir)
+        final_out_dir = stage_2_out_dir
 
     for host in hosts:
         package_toolchain(final_out_dir, args.build_name, host)
