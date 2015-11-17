@@ -250,7 +250,7 @@ def install_sanitizers(build_dir, install_dir, host):
     lib_dst = os.path.join(clang_lib, 'lib/linux')
     install_directory(headers_src, headers_dst)
 
-    if host == 'linnux-x86':
+    if host == 'linux-x86':
         install_host_sanitizers(build_dir, host, lib_dst)
 
     product_base_dir = os.path.join(build_dir, 'target/product')
