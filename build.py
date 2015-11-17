@@ -99,14 +99,20 @@ def build_product(out_dir, product, prebuilts_path=None):
         ['make', jobs_arg] + overrides + targets, cwd=android_path(), env=env)
 
 
-def package_toolchain(build_dir, build_name, host):
+def cleanup_dist_dir(dist_dir):
+    # Remove any unnecessary files to not waste disk space after local builds.
+    old_zips_pattern = os.path.join(dist_dir, '*.tar.bz2')
+    for old_zip in glob.glob(old_zips_pattern):
+        os.remove(old_zip)
+
+
+def package_toolchain(build_dir, build_name, host, dist_dir):
     temp_dir = tempfile.mkdtemp()
     try:
         package_name = 'clang-' + build_name
         install_dir = os.path.join(temp_dir, package_name)
         install_toolchain(build_dir, install_dir, host)
 
-        dist_dir = ORIG_ENV.get('DIST_DIR', build_dir)
         tarball_name = package_name + '-' + host
         package_path = os.path.join(dist_dir, tarball_name) + '.tar.bz2'
         print('Packaging ' + package_path)
@@ -373,8 +379,10 @@ def main():
         build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir)
         final_out_dir = stage_2_out_dir
 
+    dist_dir = ORIG_ENV.get('DIST_DIR', final_out_dir)
+    cleanup_dist_dir(dist_dir)
     for host in hosts:
-        package_toolchain(final_out_dir, args.build_name, host)
+        package_toolchain(final_out_dir, args.build_name, host, dist_dir)
 
 
 if __name__ == '__main__':
