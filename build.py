@@ -121,6 +121,11 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
         install_dir = os.path.join(temp_dir, package_name)
         install_toolchain(build_dir, install_dir, host)
 
+        version_file_path = os.path.join(install_dir, 'AndroidVersion.txt')
+        with open(version_file_path, 'w') as version_file:
+            version_file.write('{}.{}.{}\n'.format(
+                version.major, version.minor, version.patch))
+
         tarball_name = package_name + '-' + host
         package_path = os.path.join(dist_dir, tarball_name) + '.tar.bz2'
         print('Packaging ' + package_path)
