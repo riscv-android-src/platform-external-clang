@@ -89,6 +89,14 @@ def build_product(out_dir, product, prebuilts_path=None):
     env['TARGET_BUILD_VARIANT'] = 'userdebug'
     env['TARGET_PRODUCT'] = product
 
+    if sys.platform == 'darwin':
+        # http://b/25715107
+        # The build servers are using 10.8 (Mountain Lion) because that's
+        # currently the minimum supported version, but kati doesn't work with
+        # 10.8. This is just a temporary fix until we either move to 10.9 or
+        # make the build less hermetic to handle that.
+        env['USE_NINJA'] = 'false'
+
     overrides = []
     if prebuilts_path is not None:
         overrides.append('LLVM_PREBUILTS_BASE={}'.format(prebuilts_path))
