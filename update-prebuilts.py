@@ -128,9 +128,16 @@ def update_clang(host, build_number, use_current_branch, download_dir):
     print('Adding files to index...')
     subprocess.check_call(['git', 'add', install_subdir])
 
-    # TODO(danalbert): Include the SVN revision number in the commit message.
+    version_file_path = os.path.join(install_subdir, 'AndroidVersion.txt')
+    with open(version_file_path) as version_file:
+        version = version_file.read().strip()
+
     print('Committing update...')
-    message = 'Update prebuilt Clang to build {}.'.format(build_number)
+    message = '\n'.join([
+        'Update prebuilt Clang to build {}.'.format(build_number),
+        '',
+        'Built from version {}.'.format(version),
+    ])
     subprocess.check_call(['git', 'commit', '-m', message])
 
 
