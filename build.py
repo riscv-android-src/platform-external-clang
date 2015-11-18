@@ -282,12 +282,12 @@ def install_host_sanitizers(build_dir, host, lib_dst):
         built_lib_name = 'lib{}.a'.format(lib)
 
         obj64_dir = os.path.join(obj64, 'lib{}_intermediates'.format(lib))
-        lib64_name = 'libclang_rt.{}-x86_64.a'
+        lib64_name = 'libclang_rt.{}-x86_64.a'.format(lib)
         built_lib64 = os.path.join(obj64_dir, built_lib_name)
         install_file(built_lib64, os.path.join(lib_dst, lib64_name))
         if is_multilib:
             obj32_dir = os.path.join(obj32, 'lib{}_intermediates'.format(lib))
-            lib32_name = 'libclang_rt.{}-i686.a'
+            lib32_name = 'libclang_rt.{}-i686.a'.format(lib)
             built_lib32 = os.path.join(obj32_dir, built_lib_name)
             install_file(built_lib32, os.path.join(lib_dst, lib32_name))
 
