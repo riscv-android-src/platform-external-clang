@@ -23,13 +23,11 @@ clang-toolchain: \
     llvm-link \
     LLVMgold \
     libprofile_rt \
-    libasan \
-    libasan_cxx \
-    libubsan_standalone \
-    libubsan_standalone_cxx \
-    libtsan \
-    libtsan_cxx \
 
+# We only build the 32-bit versions of these libraries when we're building a
+# 32-bit target. We also build these for Linux, but we don't build them for
+# Darwin. As long as we add them to the 32-bit target builds, they will get
+# built for Linux too.
 ifdef TARGET_2ND_ARCH
 clang-toolchain: \
     libprofile_rt_32 \
@@ -41,11 +39,21 @@ clang-toolchain: \
 endif
 
 ifneq ($(HOST_OS),darwin)
-clang-toolchain: host_cross_clang
+clang-toolchain: \
+    host_cross_clang \
+    libtsan \
+    libtsan_cxx \
+
 endif
 
 ifeq ($(TARGET_ARCH),arm)
-clang-toolchain: $(ADDRESS_SANITIZER_RUNTIME_LIBRARY)
+clang-toolchain: \
+    $(ADDRESS_SANITIZER_RUNTIME_LIBRARY) \
+    libasan \
+    libasan_cxx \
+    libubsan_standalone \
+    libubsan_standalone_cxx \
+
 endif
 
 include $(CLEAR_VARS)
