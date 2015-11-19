@@ -41,18 +41,18 @@ endif
 ifneq ($(HOST_OS),darwin)
 clang-toolchain: \
     host_cross_clang \
+    libasan \
+    libasan_cxx \
     libtsan \
     libtsan_cxx \
+    libubsan_standalone \
+    libubsan_standalone_cxx \
 
 endif
 
 ifeq ($(TARGET_ARCH),arm)
 clang-toolchain: \
     $(ADDRESS_SANITIZER_RUNTIME_LIBRARY) \
-    libasan \
-    libasan_cxx \
-    libubsan_standalone \
-    libubsan_standalone_cxx \
 
 endif
 
