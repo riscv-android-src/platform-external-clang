@@ -146,7 +146,14 @@ def install_toolchain(build_dir, install_dir, host):
 def install_built_host_files(build_dir, install_dir, host):
     is_windows = host.startswith('windows')
     bin_ext = '.exe' if is_windows else ''
-    lib_ext = '.dll' if is_windows else '.so'
+
+    if is_windows:
+        lib_ext = '.dll'
+    elif host == 'darwin-x86':
+        lib_ext = '.dylib'
+    else:
+        lib_ext = '.so'
+
     built_files = [
         'bin/clang' + bin_ext,
         'bin/clang++' + bin_ext,
