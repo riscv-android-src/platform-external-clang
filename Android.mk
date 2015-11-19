@@ -24,29 +24,20 @@ clang-toolchain: \
     LLVMgold \
     libprofile_rt \
 
-# We only build the 32-bit versions of these libraries when we're building a
-# 32-bit target. We also build these for Linux, but we don't build them for
-# Darwin. As long as we add them to the 32-bit target builds, they will get
-# built for Linux too.
-ifdef TARGET_2ND_ARCH
-clang-toolchain: \
-    libprofile_rt_32 \
-    libasan_32 \
-    libasan_cxx_32 \
-    libubsan_standalone_32 \
-    libubsan_standalone_cxx_32 \
-
-endif
-
 ifneq ($(HOST_OS),darwin)
 clang-toolchain: \
     host_cross_clang \
     libasan \
+    libasan_32 \
     libasan_cxx \
+    libasan_cxx_32 \
+    libprofile_rt_32 \
     libtsan \
     libtsan_cxx \
     libubsan_standalone \
+    libubsan_standalone_32 \
     libubsan_standalone_cxx \
+    libubsan_standalone_cxx_32 \
 
 endif
 
