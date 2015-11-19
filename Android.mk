@@ -23,17 +23,22 @@ clang-toolchain: \
     llvm-link \
     LLVMgold \
     libprofile_rt \
-    libprofile_rt_32 \
     libasan \
-    libasan_32 \
     libasan_cxx \
-    libasan_cxx_32 \
     libubsan_standalone \
-    libubsan_standalone_32 \
     libubsan_standalone_cxx \
-    libubsan_standalone_cxx_32 \
     libtsan \
     libtsan_cxx \
+
+ifdef TARGET_2ND_ARCH
+clang-toolchain: \
+    libprofile_rt_32 \
+    libasan_32 \
+    libasan_cxx_32 \
+    libubsan_standalone_32 \
+    libubsan_standalone_cxx_32 \
+
+endif
 
 ifneq ($(HOST_OS),darwin)
 clang-toolchain: host_cross_clang
