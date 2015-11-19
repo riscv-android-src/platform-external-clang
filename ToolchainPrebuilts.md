@@ -105,8 +105,15 @@ Generating New Prebuilts
         python external/clang/build.py
 
 2. The just built toolchain can be tested in an existing AOSP tree by invoking
-   make with `make LLVM\_PREBUILTS\_BASE=/path/to/llvm/out/stage2-install`. This
-   will use the just built toolchain rather than the one in prebuilts/.
+   make with:
+
+        make \
+            LLVM_PREBUILTS_VERSION=clang-dev \
+            LLVM_PREBUILTS_BASE=/path/to/llvm/out/install
+
+   This will use the just built toolchain rather than the one in **prebuilts/**.
+   If you used something other than the default for `--build-name`, use
+   `clang-$BUILD_NAME` instead of `clang-dev`.
 
 3. Once the updates have been verified, upload to gerrit, review, submit. The
    build server will pick up the changes and build them. The LLVM build page is
@@ -130,7 +137,7 @@ Generating New Prebuilts
    There may be necessary fixups here, to handle .ll reading or other projects
    where new warnings/errors are firing.
 
-       m -j48 checkbuild
+        m -j48 checkbuild
 
 6. Upload the changes produced in **prebuilts/clang/host**.
    This may entail more than a simple `git commit -a`, so look at `git status`

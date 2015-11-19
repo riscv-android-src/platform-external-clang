@@ -17,14 +17,12 @@
 from __future__ import print_function
 
 import argparse
-import datetime
 import glob
 import multiprocessing
 import os
 import shutil
 import subprocess
 import sys
-import tempfile
 
 import version
 
@@ -37,14 +35,14 @@ def android_path(*args):
     return os.path.realpath(os.path.join(THIS_DIR, '../..', *args))
 
 
-def build_path(subdir):
+def build_path(*args):
     # Our multistage build directories will be placed under OUT_DIR if it is in
     # the environment. By default they will be placed under
     # $ANDROID_BUILD_TOP/out.
     top_out = ORIG_ENV.get('OUT_DIR', android_path('out'))
     if not os.path.isabs(top_out):
         top_out = os.path.realpath(top_out)
-    return os.path.join(top_out, subdir)
+    return os.path.join(top_out, *args)
 
 
 def short_version():
@@ -65,7 +63,7 @@ def install_directory(src, dst):
     shutil.copytree(src, dst)
 
 
-def build(out_dir, prebuilts_path=None):
+def build(out_dir, prebuilts_path=None, prebuilts_version=None):
     products = (
         'aosp_arm',
         'aosp_arm64',
@@ -75,10 +73,10 @@ def build(out_dir, prebuilts_path=None):
         'aosp_x86_64',
     )
     for product in products:
-        build_product(out_dir, product, prebuilts_path)
+        build_product(out_dir, product, prebuilts_path, prebuilts_version)
 
 
-def build_product(out_dir, product, prebuilts_path=None):
+def build_product(out_dir, product, prebuilts_path, prebuilts_version):
     env = dict(ORIG_ENV)
     env['OUT_DIR'] = out_dir
     env['DISABLE_LLVM_DEVICE_BUILDS'] = 'true'
@@ -100,6 +98,8 @@ def build_product(out_dir, product, prebuilts_path=None):
     overrides = []
     if prebuilts_path is not None:
         overrides.append('LLVM_PREBUILTS_BASE={}'.format(prebuilts_path))
+    if prebuilts_version is not None:
+        overrides.append('LLVM_PREBUILTS_VERSION={}'.format(prebuilts_version))
 
     jobs_arg = '-j{}'.format(multiprocessing.cpu_count())
     targets = ['clang-toolchain']
@@ -115,24 +115,29 @@ def cleanup_dist_dir(dist_dir):
 
 
 def package_toolchain(build_dir, build_name, host, dist_dir):
-    temp_dir = tempfile.mkdtemp()
-    try:
-        package_name = 'clang-' + build_name
-        install_dir = os.path.join(temp_dir, package_name)
-        install_toolchain(build_dir, install_dir, host)
+    package_name = 'clang-' + build_name
+    install_host_dir = build_path('install', host)
+    install_dir = os.path.join(install_host_dir, package_name)
 
-        version_file_path = os.path.join(install_dir, 'AndroidVersion.txt')
-        with open(version_file_path, 'w') as version_file:
-            version_file.write('{}.{}.{}\n'.format(
-                version.major, version.minor, version.patch))
+    # Remove any previously installed toolchain so it doesn't pollute the
+    # build.
+    if os.path.exists(install_host_dir):
+        shutil.rmtree(install_host_dir)
 
-        tarball_name = package_name + '-' + host
-        package_path = os.path.join(dist_dir, tarball_name) + '.tar.bz2'
-        print('Packaging ' + package_path)
-        args = ['tar', '-cjC', temp_dir, '-f', package_path, package_name]
-        subprocess.check_call(args)
-    finally:
-        shutil.rmtree(temp_dir)
+    install_toolchain(build_dir, install_dir, host)
+
+    version_file_path = os.path.join(install_dir, 'AndroidVersion.txt')
+    with open(version_file_path, 'w') as version_file:
+        version_file.write('{}.{}.{}\n'.format(
+            version.major, version.minor, version.patch))
+
+    tarball_name = package_name + '-' + host
+    package_path = os.path.join(dist_dir, tarball_name) + '.tar.bz2'
+    print('Packaging ' + package_path)
+    args = [
+        'tar', '-cjC', install_host_dir, '-f', package_path, package_name
+    ]
+    subprocess.check_call(args)
 
 
 def install_toolchain(build_dir, install_dir, host):
@@ -348,8 +353,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        '--build-name', default=datetime.date.today().strftime('%Y%m%d'),
-        help='Release name for the package.')
+        '--build-name', default='dev', help='Release name for the package.')
 
     multi_stage_group = parser.add_mutually_exclusive_group()
     multi_stage_group.add_argument(
@@ -378,18 +382,20 @@ def main():
     if args.multi_stage:
         stage_1_install_dir = build_path('stage1-install')
         for host in hosts:
-            install_dir = os.path.join(
-                stage_1_install_dir, host, short_version())
+            package_name = 'clang-' + args.build_name
+            install_host_dir = os.path.join(stage_1_install_dir, host)
+            install_dir = os.path.join(install_host_dir, package_name)
 
             # Remove any previously installed toolchain so it doesn't pollute
             # the build.
-            if os.path.exists(install_dir):
-                shutil.rmtree(install_dir)
+            if os.path.exists(install_host_dir):
+                shutil.rmtree(install_host_dir)
 
             install_toolchain(stage_1_out_dir, install_dir, host)
 
         stage_2_out_dir = build_path('stage2')
-        build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir)
+        build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir,
+              prebuilts_version=package_name)
         final_out_dir = stage_2_out_dir
 
     dist_dir = ORIG_ENV.get('DIST_DIR', final_out_dir)
