@@ -46,7 +46,7 @@ clang-toolchain: \
 
 endif
 
-ifeq ($(TARGET_ARCH),arm)
+ifneq (,$(filter arm arm64,$(TARGET_ARCH)))
 clang-toolchain: \
     $(ADDRESS_SANITIZER_RUNTIME_LIBRARY) \
     libasan \
