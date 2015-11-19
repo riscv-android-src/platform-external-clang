@@ -145,11 +145,12 @@ def install_toolchain(build_dir, install_dir, host):
 
 def install_built_host_files(build_dir, install_dir, host):
     is_windows = host.startswith('windows')
+    is_darwin = host.startswith('darwin-x86')
     bin_ext = '.exe' if is_windows else ''
 
     if is_windows:
         lib_ext = '.dll'
-    elif host == 'darwin-x86':
+    elif is_darwin:
         lib_ext = '.dylib'
     else:
         lib_ext = '.so'
@@ -179,7 +180,11 @@ def install_built_host_files(build_dir, install_dir, host):
         install_file(built_path, install_path)
 
         file_name = os.path.basename(built_file)
-        subprocess.check_call(['strip', os.path.join(install_path, file_name)])
+
+        # Only strip bin files (not libs) on darwin.
+        if not is_darwin or built_file.startswith('bin/'):
+            subprocess.check_call(
+                ['strip', os.path.join(install_path, file_name)])
 
 
 def install_analyzer_scripts(install_dir):
