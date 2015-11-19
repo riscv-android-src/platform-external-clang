@@ -236,7 +236,7 @@ def install_profile_rt(build_dir, install_dir, host):
 def install_target_profile_rt(build_dir, lib_dir):
     product_to_arch = {
         'generic': 'arm',
-        'generic_arm64': 'arm64',
+        'generic_arm64': 'aarch64',
         'generic_mips': 'mips',
         'generic_mips64': 'mips64',
         'generic_x86': 'x86',
@@ -282,6 +282,19 @@ def install_sanitizers(build_dir, install_dir, host):
     lib32_name = 'libclang_rt.asan-arm-android.so'
     install_file(os.path.join(lib32_dir, lib32_name), lib_dst)
 
+    # Tuples of (product, arch, libdir)
+    product_to_arch = (
+        ('generic', 'arm', 'lib'),
+        ('generic_arm64', 'aarch64', 'lib64'),
+    )
+
+    for product, arch, libdir in product_to_arch:
+        product_dir = os.path.join(build_dir, 'target/product', product)
+        system_dir = os.path.join(product_dir, 'system')
+        system_lib_dir = os.path.join(system_dir, libdir)
+        lib_name = 'libclang_rt.asan-{}-android.so'.format(arch)
+        built_lib = os.path.join(system_lib_dir, lib_name)
+        install_file(built_lib, lib_dst)
 
 def install_host_sanitizers(build_dir, host, lib_dst):
     # Tuples of (name, multilib).
