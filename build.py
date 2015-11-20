@@ -135,6 +135,7 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
 
 def install_toolchain(build_dir, install_dir, host):
     install_built_host_files(build_dir, install_dir, host)
+    install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
     install_headers(build_dir, install_dir)
     install_profile_rt(build_dir, install_dir, host)
@@ -188,6 +189,46 @@ def install_built_host_files(build_dir, install_dir, host):
 
 
 def install_analyzer_scripts(install_dir):
+    """Create and install bash scripts for invoking Clang for analysis."""
+    analyzer_text = (
+        '#!/bin/bash\n'
+        'if [ "$1" != "-cc1" ]; then\n'
+        '    `dirname $0`/../clang{clang_suffix} -target {target} "$@"\n'
+        'else\n'
+        '    # target/triple already spelled out.\n'
+        '    `dirname $0`/../clang{clang_suffix} "$@"\n'
+        'fi\n'
+    )
+
+    arch_target_pairs = (
+        ('arm64-v8a', 'aarch64-none-linux-android'),
+        ('armeabi', 'armv5te-none-linux-androideabi'),
+        ('armeabi-v7a', 'armv7-none-linux-androideabi'),
+        ('armeabi-v7a-hard', 'armv7-none-linux-androideabi'),
+        ('mips', 'mipsel-none-linux-android'),
+        ('mips64', 'mips64el-none-linux-android'),
+        ('x86', 'i686-none-linux-android'),
+        ('x86_64', 'x86_64-none-linux-android'),
+    )
+
+    for arch, target in arch_target_pairs:
+        arch_path = os.path.join(install_dir, 'bin', arch)
+        os.makedirs(arch_path)
+
+        analyzer_file_path = os.path.join(arch_path, 'analyzer')
+        print('Creating ' + analyzer_file_path)
+        with open(analyzer_file_path, 'w') as analyzer_file:
+            analyzer_file.write(
+                    analyzer_text.format(clang_suffix='', target=target))
+
+        analyzerpp_file_path = os.path.join(arch_path, 'analyzer++')
+        print('Creating ' + analyzerpp_file_path)
+        with open(analyzerpp_file_path, 'w') as analyzerpp_file:
+            analyzerpp_file.write(
+                    analyzer_text.format(clang_suffix='++', target=target))
+
+
+def install_scan_scripts(install_dir):
     tools_install_dir = os.path.join(install_dir, 'tools')
     os.makedirs(tools_install_dir)
     tools = ('scan-build', 'scan-view')
