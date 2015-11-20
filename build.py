@@ -242,9 +242,9 @@ def install_target_profile_rt(build_dir, lib_dir):
     product_to_arch = {
         'generic': 'arm',
         'generic_arm64': 'aarch64',
-        'generic_mips': 'mips',
-        'generic_mips64': 'mips64',
-        'generic_x86': 'x86',
+        'generic_mips': 'mipsel',
+        'generic_mips64': 'mips64el',
+        'generic_x86': 'i686',
         'generic_x86_64': 'x86_64',
     }
 
