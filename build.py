@@ -135,6 +135,7 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
 
 def install_toolchain(build_dir, install_dir, host):
     install_built_host_files(build_dir, install_dir, host)
+    install_sanitizer_scripts(install_dir)
     install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
     install_headers(build_dir, install_dir)
@@ -186,6 +187,12 @@ def install_built_host_files(build_dir, install_dir, host):
         if not is_darwin or built_file.startswith('bin/'):
             subprocess.check_call(
                 ['strip', os.path.join(install_path, file_name)])
+
+
+def install_sanitizer_scripts(install_dir):
+    script_path = android_path(
+        'external/compiler-rt/lib/asan/scripts/asan_device_setup')
+    shutil.copy2(script_path, os.path.join(install_dir, 'bin'))
 
 
 def install_analyzer_scripts(install_dir):
