@@ -219,13 +219,13 @@ def install_analyzer_scripts(install_dir):
         print('Creating ' + analyzer_file_path)
         with open(analyzer_file_path, 'w') as analyzer_file:
             analyzer_file.write(
-                    analyzer_text.format(clang_suffix='', target=target))
+                analyzer_text.format(clang_suffix='', target=target))
 
         analyzerpp_file_path = os.path.join(arch_path, 'analyzer++')
         print('Creating ' + analyzerpp_file_path)
         with open(analyzerpp_file_path, 'w') as analyzerpp_file:
             analyzerpp_file.write(
-                    analyzer_text.format(clang_suffix='++', target=target))
+                analyzer_text.format(clang_suffix='++', target=target))
 
 
 def install_scan_scripts(install_dir):
@@ -341,6 +341,7 @@ def install_sanitizers(build_dir, install_dir, host):
         lib_name = 'libclang_rt.asan-{}-android.so'.format(arch)
         built_lib = os.path.join(system_lib_dir, lib_name)
         install_file(built_lib, lib_dst)
+
 
 def install_host_sanitizers(build_dir, host, lib_dst):
     # Tuples of (name, multilib).
