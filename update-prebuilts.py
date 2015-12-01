@@ -46,6 +46,10 @@ class ArgParser(argparse.ArgumentParser):
             help='Build number to pull from the build server.')
 
         self.add_argument(
+            '-b', '--bug', type=int,
+            help='Bug to reference in commit message.')
+
+        self.add_argument(
             '--use-current-branch', action='store_true',
             help='Do not repo start a new branch for the update.')
 
@@ -111,7 +115,7 @@ def extract_package(package, install_dir):
     subprocess.check_call(cmd)
 
 
-def update_clang(host, build_number, use_current_branch, download_dir):
+def update_clang(host, build_number, use_current_branch, download_dir, bug):
     host_tag = host + '-x86'
     prebuilt_dir = android_path('prebuilts/clang/host', host_tag)
     os.chdir(prebuilt_dir)
@@ -133,11 +137,15 @@ def update_clang(host, build_number, use_current_branch, download_dir):
         version = version_file.read().strip()
 
     print('Committing update...')
-    message = '\n'.join([
+    message_lines = [
         'Update prebuilt Clang to build {}.'.format(build_number),
         '',
         'Built from version {}.'.format(version),
-    ])
+    ]
+    if bug is not None:
+        message_lines.append('')
+        message_lines.append('Bug: http://b/{}'.format(bug))
+    message = '\n'.join(message_lines)
     subprocess.check_call(['git', 'commit', '-m', message])
 
 
@@ -153,7 +161,7 @@ def main():
         hosts = ('darwin', 'linux', 'windows')
         for host in hosts:
             update_clang(host, args.build, args.use_current_branch,
-                         download_dir)
+                         download_dir, args.bug)
     finally:
         shutil.rmtree(download_dir)
 
