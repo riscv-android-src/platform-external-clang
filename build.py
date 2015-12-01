@@ -138,7 +138,7 @@ def install_toolchain(build_dir, install_dir, host):
     install_sanitizer_scripts(install_dir)
     install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
-    install_headers(build_dir, install_dir)
+    install_headers(build_dir, install_dir, host)
     install_profile_rt(build_dir, install_dir, host)
     install_sanitizers(build_dir, install_dir, host)
     install_license_files(install_dir)
@@ -246,7 +246,7 @@ def install_scan_scripts(install_dir):
         install_directory(tool_path, install_path)
 
 
-def install_headers(build_dir, install_dir):
+def install_headers(build_dir, install_dir, host):
     def should_copy(path):
         if os.path.basename(path) in ('Makefile', 'CMakeLists.txt'):
             return False
@@ -266,8 +266,11 @@ def install_headers(build_dir, install_dir):
 
     install_file(android_path('bionic/libc/include/stdatomic.h'), headers_dst)
 
+    # arm_neon.h gets produced as part of external/clang/lib/Basic/Android.mk.
+    # We must bundle the resulting file as part of the official Clang headers.
     arm_neon_h = os.path.join(
-        build_dir, 'target/product/generic/obj/include/clang/arm_neon.h')
+        build_dir, 'host', host, 'obj/STATIC_LIBRARIES/'
+        'libclangBasic_intermediates/include/clang/Basic/arm_neon.h')
     install_file(arm_neon_h, headers_dst)
 
     os.symlink(short_version(),

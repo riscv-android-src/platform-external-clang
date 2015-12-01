@@ -15,7 +15,6 @@ endif
 
 .PHONY: clang-toolchain
 clang-toolchain: \
-    $(TARGET_OUT_HEADERS)/clang/arm_neon.h \
     clang \
     FileCheck \
     llvm-as \
