@@ -15,7 +15,6 @@ endif
 
 .PHONY: clang-toolchain
 clang-toolchain: \
-    $(TARGET_OUT_HEADERS)/clang/arm_neon.h \
     clang \
     FileCheck \
     llvm-as \
@@ -62,7 +61,6 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
   lib/Frontend \
   lib/Frontend/Rewrite \
   lib/FrontendTool \
-  lib/Headers \
   lib/Index \
   lib/Lex \
   lib/Parse \
