@@ -257,7 +257,7 @@ def install_headers(build_dir, install_dir, host):
 
     headers_src = android_path('external/clang/lib/Headers')
     headers_dst = os.path.join(
-        install_dir, 'lib/clang', short_version(), 'include')
+        install_dir, 'lib64/clang', short_version(), 'include')
     os.makedirs(headers_dst)
     for header in os.listdir(headers_src):
         if not should_copy(header):
@@ -274,12 +274,12 @@ def install_headers(build_dir, install_dir, host):
     install_file(arm_neon_h, headers_dst)
 
     os.symlink(short_version(),
-               os.path.join(install_dir, 'lib/clang', long_version()))
+               os.path.join(install_dir, 'lib64/clang', long_version()))
 
 
 def install_profile_rt(build_dir, install_dir, host):
     lib_dir = os.path.join(
-        install_dir, 'lib/clang', short_version(), 'lib/linux')
+        install_dir, 'lib64/clang', short_version(), 'lib/linux')
     os.makedirs(lib_dir)
 
     install_target_profile_rt(build_dir, lib_dir)
@@ -325,7 +325,7 @@ def install_host_profile_rt(build_dir, host, lib_dir):
 
 def install_sanitizers(build_dir, install_dir, host):
     headers_src = android_path('external/compiler-rt/include/sanitizer')
-    clang_lib = os.path.join(install_dir, 'lib/clang', short_version())
+    clang_lib = os.path.join(install_dir, 'lib64/clang', short_version())
     headers_dst = os.path.join(clang_lib, 'include/sanitizer')
     lib_dst = os.path.join(clang_lib, 'lib/linux')
     install_directory(headers_src, headers_dst)
