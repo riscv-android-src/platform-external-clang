@@ -333,15 +333,11 @@ def install_sanitizers(build_dir, install_dir, host):
     if host == 'linux-x86':
         install_host_sanitizers(build_dir, host, lib_dst)
 
-    product_base_dir = os.path.join(build_dir, 'target/product')
-    lib32_dir = os.path.join(product_base_dir, 'generic/system/lib')
-    lib32_name = 'libclang_rt.asan-arm-android.so'
-    install_file(os.path.join(lib32_dir, lib32_name), lib_dst)
-
     # Tuples of (product, arch, libdir)
     product_to_arch = (
         ('generic', 'arm', 'lib'),
         ('generic_arm64', 'aarch64', 'lib64'),
+        ('generic_x86', 'i686', 'lib'),
     )
 
     for product, arch, libdir in product_to_arch:
