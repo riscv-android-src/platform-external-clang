@@ -13,7 +13,7 @@ ifneq "$(words $(FORCE_BUILD_LLVM_DEBUG))$(words $(filter-out true false,$(FORCE
   $(error FORCE_BUILD_LLVM_DEBUG may only be true, false, or unset)
 endif
 
-.PHONY: clang-toolchain
+.PHONY: clang-toolchain llvm-tools
 clang-toolchain: \
     clang \
     FileCheck \
@@ -21,7 +21,47 @@ clang-toolchain: \
     llvm-dis \
     llvm-link \
     LLVMgold \
-    libprofile_rt \
+    libprofile_rt
+
+llvm-tools: \
+    bugpoint \
+    BugpointPasses \
+    count \
+    llc \
+    lli \
+    lli-child-target \
+    LLVMHello \
+    llvm-ar \
+    llvm-as \
+    llvm-bcanalyzer \
+    llvm-config \
+    llvm-cov \
+    llvm-c-test \
+    llvm-cxxdump \
+    llvm-diff \
+    llvm-dis \
+    llvm-dsymutil \
+    llvm-dwarfdump \
+    llvm-extract \
+    llvm-link \
+    llvm-lto \
+    llvm-mc \
+    llvm-mcmarkup \
+    llvm-nm \
+    llvm-objdump \
+    llvm-pdbdump \
+    llvm-profdata \
+    llvm-readobj \
+    llvm-rtdyld \
+    llvm-size \
+    llvm-symbolizer \
+    macho-dump \
+    not \
+    obj2yaml \
+    opt \
+    verify-uselistorder \
+    yaml2obj \
+    yaml-bench
 
 ifneq ($(HOST_OS),darwin)
 clang-toolchain: \
@@ -36,13 +76,13 @@ clang-toolchain: \
     libubsan_standalone \
     libubsan_standalone_32 \
     libubsan_standalone_cxx \
-    libubsan_standalone_cxx_32 \
+    libubsan_standalone_cxx_32
 
 endif
 
 ifneq (,$(filter arm arm64 x86,$(TARGET_ARCH)))
 clang-toolchain: \
-    $(ADDRESS_SANITIZER_RUNTIME_LIBRARY) \
+    $(ADDRESS_SANITIZER_RUNTIME_LIBRARY)
 
 endif
 
