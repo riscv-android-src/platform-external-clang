@@ -4,6 +4,8 @@
 #ifndef ANDROID_CONFIG_H
 #define ANDROID_CONFIG_H
 
+#define CLANG_VENDOR "Android "
+
 /* Bug report URL. */
 #define BUG_REPORT_URL "http://llvm.org/bugs/"
 
@@ -28,7 +30,7 @@
 /* Define if we have libxml2 */
 /* #undef CLANG_HAVE_LIBXML */
 
-#define PACKAGE_STRING "LLVM 3.6.0svn"
+#define PACKAGE_STRING "LLVM 3.8.243773"
 
 /* The LLVM product name and version */
 #define BACKEND_PACKAGE_STRING PACKAGE_STRING
