@@ -63,7 +63,8 @@ def install_directory(src, dst):
     shutil.copytree(src, dst)
 
 
-def build(out_dir, prebuilts_path=None, prebuilts_version=None):
+def build(out_dir, prebuilts_path=None, prebuilts_version=None,
+          build_all_llvm_tools=None):
     products = (
         'aosp_arm',
         'aosp_arm64',
@@ -73,10 +74,12 @@ def build(out_dir, prebuilts_path=None, prebuilts_version=None):
         'aosp_x86_64',
     )
     for product in products:
-        build_product(out_dir, product, prebuilts_path, prebuilts_version)
+        build_product(out_dir, product, prebuilts_path, prebuilts_version,
+                      build_all_llvm_tools)
 
 
-def build_product(out_dir, product, prebuilts_path, prebuilts_version):
+def build_product(out_dir, product, prebuilts_path, prebuilts_version,
+                  build_all_llvm_tools):
     env = dict(ORIG_ENV)
     env['OUT_DIR'] = out_dir
     env['DISABLE_LLVM_DEVICE_BUILDS'] = 'true'
@@ -103,6 +106,8 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version):
 
     jobs_arg = '-j{}'.format(multiprocessing.cpu_count())
     targets = ['clang-toolchain']
+    if build_all_llvm_tools:
+        targets += ['llvm-tools']
     subprocess.check_call(
         ['make', jobs_arg] + overrides + targets, cwd=android_path(), env=env)
 
@@ -429,6 +434,10 @@ def parse_args():
         '--no-multi-stage', action='store_false', dest='multi_stage',
         help='Do not perform multi-stage build.')
 
+    parser.add_argument(
+        '--build-all-llvm-tools', action='store_true', default=False,
+        help='Build all the LLVM tools/utilities.')
+
     return parser.parse_args()
 
 
@@ -461,7 +470,8 @@ def main():
 
         stage_2_out_dir = build_path('stage2')
         build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir,
-              prebuilts_version=package_name)
+              prebuilts_version=package_name,
+              build_all_llvm_tools=args.build_all_llvm_tools)
         final_out_dir = stage_2_out_dir
 
     dist_dir = ORIG_ENV.get('DIST_DIR', final_out_dir)
