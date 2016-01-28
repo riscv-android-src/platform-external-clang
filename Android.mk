@@ -42,6 +42,7 @@ llvm-tools: \
     llvm-dis \
     llvm-dsymutil \
     llvm-dwarfdump \
+    llvm-dwp \
     llvm-extract \
     llvm-link \
     llvm-lto \
@@ -54,11 +55,12 @@ llvm-tools: \
     llvm-readobj \
     llvm-rtdyld \
     llvm-size \
+    llvm-split \
     llvm-symbolizer \
-    macho-dump \
     not \
     obj2yaml \
     opt \
+    sancov \
     verify-uselistorder \
     yaml2obj \
     yaml-bench
