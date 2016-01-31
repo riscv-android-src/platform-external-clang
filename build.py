@@ -435,7 +435,12 @@ def parse_args():
         help='Do not perform multi-stage build.')
 
     parser.add_argument(
-        '--build-all-llvm-tools', action='store_true', default=False,
+        '--build-all-llvm-tools', action='store_true', default=True,
+        help='Build all the LLVM tools/utilities.')
+
+    parser.add_argument(
+        '--no-build-all-llvm-tools', action='store_false',
+        dest='build_all_llvm_tools',
         help='Build all the LLVM tools/utilities.')
 
     return parser.parse_args()
