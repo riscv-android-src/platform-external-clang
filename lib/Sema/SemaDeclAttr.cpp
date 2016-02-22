@@ -1914,7 +1914,7 @@ AvailabilityAttr *Sema::mergeAvailabilityAttr(NamedDecl *D, SourceRange Range,
                                               VersionTuple Obsoleted,
                                               bool IsUnavailable,
                                               StringRef Message,
-                                              bool IsNopartial,
+                                              bool IsStrict,
                                               AvailabilityMergeKind AMK,
                                               unsigned AttrSpellingListIndex) {
   VersionTuple MergedIntroduced = Introduced;
@@ -2061,7 +2061,7 @@ AvailabilityAttr *Sema::mergeAvailabilityAttr(NamedDecl *D, SourceRange Range,
     return ::new (Context) AvailabilityAttr(Range, Context, Platform,
                                             Introduced, Deprecated,
                                             Obsoleted, IsUnavailable, Message,
-                                            IsNopartial, AttrSpellingListIndex);
+                                            IsStrict, AttrSpellingListIndex);
   }
   return nullptr;
 }
@@ -2088,7 +2088,7 @@ static void handleAvailabilityAttr(Sema &S, Decl *D,
   AvailabilityChange Deprecated = Attr.getAvailabilityDeprecated();
   AvailabilityChange Obsoleted = Attr.getAvailabilityObsoleted();
   bool IsUnavailable = Attr.getUnavailableLoc().isValid();
-  bool IsNopartial = Attr.getNopartialLoc().isValid();
+  bool IsStrict = Attr.getStrictLoc().isValid();
   StringRef Str;
   if (const StringLiteral *SE =
           dyn_cast_or_null<StringLiteral>(Attr.getMessageExpr()))
@@ -2099,7 +2099,7 @@ static void handleAvailabilityAttr(Sema &S, Decl *D,
                                                       Deprecated.Version,
                                                       Obsoleted.Version,
                                                       IsUnavailable, Str,
-                                                      IsNopartial,
+                                                      IsStrict,
                                                       Sema::AMK_None,
                                                       Index);
   if (NewAttr)
@@ -2144,7 +2144,7 @@ static void handleAvailabilityAttr(Sema &S, Decl *D,
                                                             NewDeprecated,
                                                             NewObsoleted,
                                                             IsUnavailable, Str,
-                                                            IsNopartial,
+                                                            IsStrict,
                                                             Sema::AMK_None,
                                                             Index);
         if (NewAttr)
@@ -2167,7 +2167,7 @@ static void handleAvailabilityAttr(Sema &S, Decl *D,
                                                             Deprecated.Version,
                                                             Obsoleted.Version,
                                                             IsUnavailable, Str,
-                                                            IsNopartial,
+                                                            IsStrict,
                                                             Sema::AMK_None,
                                                             Index);
         if (NewAttr)
@@ -5864,14 +5864,6 @@ static void DoEmitAvailabilityWarning(Sema &S, Sema::AvailabilityDiagnostic K,
     property_note_select = /* partial */ 2;
     available_here_select_kind = /* partial */ 3;
     break;
-
-  case Sema::AD_NotYetIntroduced:
-    diag = diag::err_notyetintroduced;
-    diag_message = diag::err_notyetintroduced_message;
-    diag_fwdclass_message = diag::warn_notyetintroduced_fwdclass_message;
-    property_note_select = /* deprecated */ 3;
-    available_here_select_kind = /* notyetintroduced */ 4;
-    break;
   }
 
   if (!Message.empty()) {
@@ -5898,22 +5890,10 @@ static void DoEmitAvailabilityWarning(Sema &S, Sema::AvailabilityDiagnostic K,
 static void handleDelayedAvailabilityCheck(Sema &S, DelayedDiagnostic &DD,
                                            Decl *Ctx) {
   assert(DD.Kind == DelayedDiagnostic::Deprecation ||
-         DD.Kind == DelayedDiagnostic::Unavailable ||
-         DD.Kind == DelayedDiagnostic::NotYetIntroduced);
-  Sema::AvailabilityDiagnostic AD;
-  switch (DD.Kind) {
-  case DelayedDiagnostic::Deprecation:
-    AD = Sema::AD_Deprecation;
-    break;
-  case DelayedDiagnostic::Unavailable:
-    AD = Sema::AD_Unavailable;
-    break;
-  case DelayedDiagnostic::NotYetIntroduced:
-    AD = Sema::AD_NotYetIntroduced;
-    break;
-  default:
-    llvm_unreachable("Expecting: deprecated, unavailable, not-yet-introduced");
-  }
+         DD.Kind == DelayedDiagnostic::Unavailable);
+  Sema::AvailabilityDiagnostic AD = DD.Kind == DelayedDiagnostic::Deprecation
+                                        ? Sema::AD_Deprecation
+                                        : Sema::AD_Unavailable;
   DD.Triggered = true;
   DoEmitAvailabilityWarning(
       S, AD, Ctx, DD.getDeprecationDecl(), DD.getDeprecationMessage(), DD.Loc,
