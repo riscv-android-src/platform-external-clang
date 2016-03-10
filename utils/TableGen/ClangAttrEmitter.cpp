@@ -1090,6 +1090,7 @@ createArgument(const Record &Arg, StringRef Attr,
 
 static void writeAvailabilityValue(raw_ostream &OS) {
   OS << "\" << getPlatform()->getName();\n"
+     << "  if (getStrict()) OS << \", strict\";\n"
      << "  if (!getIntroduced().empty()) OS << \", introduced=\" << getIntroduced();\n"
      << "  if (!getDeprecated().empty()) OS << \", deprecated=\" << getDeprecated();\n"
      << "  if (!getObsoleted().empty()) OS << \", obsoleted=\" << getObsoleted();\n"
