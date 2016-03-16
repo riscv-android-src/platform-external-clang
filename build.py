@@ -81,22 +81,15 @@ def build(out_dir, prebuilts_path=None, prebuilts_version=None,
 def build_product(out_dir, product, prebuilts_path, prebuilts_version,
                   build_all_llvm_tools):
     env = dict(ORIG_ENV)
-    env['OUT_DIR'] = out_dir
     env['DISABLE_LLVM_DEVICE_BUILDS'] = 'true'
     env['DISABLE_RELOCATION_PACKER'] = 'true'
     env['FORCE_BUILD_LLVM_COMPONENTS'] = 'true'
     env['FORCE_BUILD_SANITIZER_SHARED_OBJECTS'] = 'true'
+    env['OUT_DIR'] = out_dir
     env['SKIP_LLVM_TESTS'] = 'true'
+    env['SOONG_ALLOW_MISSING_DEPENDENCIES'] = 'true'
     env['TARGET_BUILD_VARIANT'] = 'userdebug'
     env['TARGET_PRODUCT'] = product
-
-    if sys.platform == 'darwin':
-        # http://b/25715107
-        # The build servers are using 10.8 (Mountain Lion) because that's
-        # currently the minimum supported version, but kati doesn't work with
-        # 10.8. This is just a temporary fix until we either move to 10.9 or
-        # make the build less hermetic to handle that.
-        env['USE_NINJA'] = 'false'
 
     overrides = []
     if prebuilts_path is not None:
