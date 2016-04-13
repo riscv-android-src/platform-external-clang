@@ -16,6 +16,7 @@ endif
 .PHONY: clang-toolchain llvm-tools
 clang-toolchain: \
     clang \
+    clang-tidy \
     FileCheck \
     llvm-as \
     llvm-dis \
