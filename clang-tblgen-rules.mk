@@ -223,5 +223,6 @@ $(eval $(call define-clang-tblgen-rule, \
 endif
 
 LOCAL_C_INCLUDES += $(generated_sources)/include
+LOCAL_EXPORT_C_INCLUDE_DIRS += $(generated_sources)/include
 
 endif
