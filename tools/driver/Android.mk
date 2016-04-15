@@ -79,6 +79,7 @@ LOCAL_STATIC_LIBRARIES := \
   libLLVMInstCombine \
   libLLVMInstrumentation \
   libLLVMCodeGen \
+  libLLVMDebugInfoCodeView \
   libLLVMObject \
   libLLVMLinker \
   libLLVMMC \
@@ -91,6 +92,7 @@ LOCAL_STATIC_LIBRARIES := \
   libLLVMCore \
   libLLVMOption \
   libLLVMTarget \
+  libLLVMGlobalISel \
   libLLVMProfileData \
   libLLVMObject \
   libLLVMMCDisassembler \

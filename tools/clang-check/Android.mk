@@ -73,6 +73,8 @@ clang_check_STATIC_LIBRARIES := \
   libLLVMAArch64AsmPrinter \
   libLLVMAArch64Utils \
   libLLVMIRReader \
+  libLLVMGlobalISel \
+  libLLVMDebugInfoCodeView \
   libLLVMAsmParser \
   libLLVMAsmPrinter \
   libLLVMBitReader \
