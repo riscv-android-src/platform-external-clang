@@ -158,6 +158,7 @@ def install_built_host_files(build_dir, install_dir, host):
     built_files = [
         'bin/clang' + bin_ext,
         'bin/clang++' + bin_ext,
+        'bin/clang-tidy' + bin_ext,
     ]
     if is_windows:
         built_files.extend([
@@ -381,6 +382,7 @@ def install_host_sanitizers(build_dir, host, lib_dst):
 def install_license_files(install_dir):
     projects = (
         'clang',
+        'clang-tools-extra',
         'compiler-rt',
         'libcxx',
         'libcxxabi',
