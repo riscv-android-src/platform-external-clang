@@ -84,7 +84,7 @@ clang-toolchain: \
 
 endif
 
-ifneq (,$(filter arm arm64 x86,$(TARGET_ARCH)))
+ifneq (,$(filter arm arm64 x86 mips mips64,$(TARGET_ARCH)))
 clang-toolchain: \
     $(ADDRESS_SANITIZER_RUNTIME_LIBRARY)
 

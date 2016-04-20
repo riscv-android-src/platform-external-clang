@@ -341,6 +341,8 @@ def install_sanitizers(build_dir, install_dir, host):
         ('generic', 'arm', 'lib'),
         ('generic_arm64', 'aarch64', 'lib64'),
         ('generic_x86', 'i686', 'lib'),
+        ('generic_mips', 'mips', 'lib'),
+        ('generic_mips64', 'mips64', 'lib64'),
     )
 
     for product, arch, libdir in product_to_arch:
