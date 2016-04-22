@@ -16,6 +16,7 @@ endif
 .PHONY: clang-toolchain llvm-tools
 clang-toolchain: \
     clang \
+    clang-format \
     clang-tidy \
     FileCheck \
     llvm-as \
@@ -116,6 +117,7 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
   lib/StaticAnalyzer/Frontend \
   lib/Tooling \
   lib/Tooling/Core \
+  tools/clang-format \
   tools/driver \
   tools/libclang \
   utils/TableGen \
