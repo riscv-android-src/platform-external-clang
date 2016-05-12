@@ -92,6 +92,14 @@ clang-toolchain: \
 
 endif
 
+# libomp: buld the host module by default
+clang-toolchain: libomp
+
+# libomp: build libomp for specific targets
+ifneq (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
+clang-toolchain: libomp-$(TARGET_ARCH)
+endif
+
 include $(CLEAR_VARS)
 
 subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
