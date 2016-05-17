@@ -90,6 +90,7 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
     env['SOONG_ALLOW_MISSING_DEPENDENCIES'] = 'true'
     env['TARGET_BUILD_VARIANT'] = 'userdebug'
     env['TARGET_PRODUCT'] = product
+    env['USE_SOONG'] = 'false'
 
     overrides = []
     if prebuilts_path is not None:
