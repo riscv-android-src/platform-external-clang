@@ -140,6 +140,7 @@ def install_toolchain(build_dir, install_dir, host):
     install_headers(build_dir, install_dir, host)
     install_profile_rt(build_dir, install_dir, host)
     install_sanitizers(build_dir, install_dir, host)
+    install_libomp(build_dir, install_dir)
     install_license_files(install_dir)
     install_repo_prop(install_dir)
 
@@ -327,6 +328,28 @@ def install_host_profile_rt(build_dir, host, lib_dir):
         install_file(built_lib, os.path.join(lib_dir, lib_name))
 
 
+def install_libomp(build_dir, install_dir):
+    lib_dir = os.path.join(
+        install_dir, 'lib64/clang', short_version(), 'lib/linux')
+    if not os.path.isdir(lib_dir):
+        os.makedirs(lib_dir)
+
+    product_to_arch = {
+        'generic': 'arm',
+        'generic_arm64': 'arm64',
+        'generic_x86': 'x86',
+        'generic_x86_64': 'x86_64',
+    }
+
+    for product, arch in product_to_arch.items():
+        module = 'libomp-' + arch
+        product_dir = os.path.join(build_dir, 'target/product', product)
+        shared_libs = os.path.join(product_dir, 'obj/SHARED_LIBRARIES')
+        built_lib = os.path.join(shared_libs,
+                                 '{}_intermediates/PACKED/{}.so'.format(module, module))
+        install_file(built_lib, os.path.join(lib_dir, module + '.so'))
+
+
 def install_sanitizers(build_dir, install_dir, host):
     headers_src = android_path('external/compiler-rt/include/sanitizer')
     clang_lib = os.path.join(install_dir, 'lib64/clang', short_version())
@@ -391,6 +414,7 @@ def install_license_files(install_dir):
         'libcxxabi',
         'libunwind_llvm',
         'llvm',
+        'openmp_llvm'
     )
 
     notices = []
