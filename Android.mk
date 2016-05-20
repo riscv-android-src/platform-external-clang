@@ -84,20 +84,19 @@ clang-toolchain: \
     libubsan_standalone_cxx \
     libubsan_standalone_cxx_32
 
-endif
+# Build libomp on Linux host.  Build modules for the host and some specific
+# targets.
+clang-toolchain: libomp
+ifneq (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
+clang-toolchain: libomp-$(TARGET_ARCH)
+endif # ifneq  (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
+
+endif # ifneq ($(HOST_OS),darwin)
 
 ifneq (,$(filter arm arm64 x86 mips mips64,$(TARGET_ARCH)))
 clang-toolchain: \
     $(ADDRESS_SANITIZER_RUNTIME_LIBRARY)
 
-endif
-
-# libomp: buld the host module by default
-clang-toolchain: libomp
-
-# libomp: build libomp for specific targets
-ifneq (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
-clang-toolchain: libomp-$(TARGET_ARCH)
 endif
 
 include $(CLEAR_VARS)
