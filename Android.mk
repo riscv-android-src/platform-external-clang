@@ -70,8 +70,6 @@ llvm-tools: \
 
 ifneq ($(HOST_OS),darwin)
 clang-toolchain: \
-    host_cross_clang \
-    host_cross_clang_64 \
     libasan \
     libasan_32 \
     libasan_cxx \
@@ -83,6 +81,9 @@ clang-toolchain: \
     libubsan_standalone_32 \
     libubsan_standalone_cxx \
     libubsan_standalone_cxx_32
+
+#    host_cross_clang \
+#    host_cross_clang_64 \
 
 # Build libomp on Linux host.  Build modules for the host and some specific
 # targets.
