@@ -69,7 +69,7 @@ def build(out_dir, prebuilts_path=None, prebuilts_version=None,
         'aosp_arm',
         'aosp_arm64',
         'aosp_mips',
-        'aosp_mips64',
+        #'aosp_mips64',
         'aosp_x86',
         'aosp_x86_64',
     )
@@ -217,7 +217,7 @@ def install_analyzer_scripts(install_dir):
         ('armeabi-v7a', 'armv7-none-linux-androideabi'),
         ('armeabi-v7a-hard', 'armv7-none-linux-androideabi'),
         ('mips', 'mipsel-none-linux-android'),
-        ('mips64', 'mips64el-none-linux-android'),
+        #('mips64', 'mips64el-none-linux-android'),
         ('x86', 'i686-none-linux-android'),
         ('x86_64', 'x86_64-none-linux-android'),
     )
@@ -298,7 +298,7 @@ def install_target_profile_rt(build_dir, lib_dir):
         'generic': 'arm',
         'generic_arm64': 'aarch64',
         'generic_mips': 'mipsel',
-        'generic_mips64': 'mips64el',
+        #'generic_mips64': 'mips64el',
         'generic_x86': 'i686',
         'generic_x86_64': 'x86_64',
     }
@@ -369,7 +369,7 @@ def install_sanitizers(build_dir, install_dir, host):
         ('generic_arm64', 'aarch64', 'lib64'),
         ('generic_x86', 'i686', 'lib'),
         ('generic_mips', 'mips', 'lib'),
-        ('generic_mips64', 'mips64', 'lib64'),
+        #('generic_mips64', 'mips64', 'lib64'),
     )
 
     for product, arch, libdir in product_to_arch:
@@ -479,7 +479,8 @@ def main():
     args = parse_args()
 
     if sys.platform.startswith('linux'):
-        hosts = ['linux-x86', 'windows-x86']
+        #hosts = ['linux-x86', 'windows-x86']
+        hosts = ['linux-x86']
     elif sys.platform == 'darwin':
         hosts = ['darwin-x86']
     else:

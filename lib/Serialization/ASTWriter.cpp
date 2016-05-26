@@ -50,6 +50,7 @@
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Bitcode/BitstreamWriter.h"
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -238,8 +239,14 @@ void ASTTypeWriter::VisitFunctionProtoType(const FunctionProtoType *T) {
   for (unsigned I = 0, N = T->getNumParams(); I != N; ++I)
     Writer.AddTypeRef(T->getParamType(I), Record);
 
+  if (T->hasExtParameterInfos()) {
+    for (unsigned I = 0, N = T->getNumParams(); I != N; ++I)
+      Record.push_back(T->getExtParameterInfo(I).getOpaqueValue());
+  }
+
   if (T->isVariadic() || T->hasTrailingReturn() || T->getTypeQuals() ||
-      T->getRefQualifier() || T->getExceptionSpecType() != EST_None)
+      T->getRefQualifier() || T->getExceptionSpecType() != EST_None ||
+      T->hasExtParameterInfos())
     AbbrevToUse = 0;
 
   Code = TYPE_FUNCTION_PROTO;
@@ -444,6 +451,12 @@ void
 ASTTypeWriter::VisitAtomicType(const AtomicType *T) {
   Writer.AddTypeRef(T->getValueType(), Record);
   Code = TYPE_ATOMIC;
+}
+
+void
+ASTTypeWriter::VisitPipeType(const PipeType *T) {
+  Writer.AddTypeRef(T->getElementType(), Record);
+  Code = TYPE_PIPE;
 }
 
 namespace {
@@ -671,6 +684,9 @@ void TypeLocWriter::VisitAtomicTypeLoc(AtomicTypeLoc TL) {
   Writer.AddSourceLocation(TL.getKWLoc(), Record);
   Writer.AddSourceLocation(TL.getLParenLoc(), Record);
   Writer.AddSourceLocation(TL.getRParenLoc(), Record);
+}
+void TypeLocWriter::VisitPipeTypeLoc(PipeTypeLoc TL) {
+  Writer.AddSourceLocation(TL.getKWLoc(), Record);
 }
 
 void ASTWriter::WriteTypeAbbrevs() {
@@ -921,7 +937,6 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(SEMA_DECL_REFS);
   RECORD(WEAK_UNDECLARED_IDENTIFIERS);
   RECORD(PENDING_IMPLICIT_INSTANTIATIONS);
-  RECORD(DECL_REPLACEMENTS);
   RECORD(UPDATE_VISIBLE);
   RECORD(DECL_UPDATE_OFFSETS);
   RECORD(DECL_UPDATES);
@@ -944,6 +959,8 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(UNDEFINED_BUT_USED);
   RECORD(LATE_PARSED_TEMPLATE);
   RECORD(OPTIMIZE_PRAGMA_OPTIONS);
+  RECORD(MSSTRUCT_PRAGMA_OPTIONS);
+  RECORD(POINTERS_TO_MEMBERS_PRAGMA_OPTIONS);
   RECORD(UNUSED_LOCAL_TYPEDEF_NAME_CANDIDATES);
   RECORD(CXX_CTOR_INITIALIZERS_OFFSETS);
   RECORD(DELETE_EXPRS_TO_ANALYZE);
@@ -953,6 +970,7 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(SM_SLOC_FILE_ENTRY);
   RECORD(SM_SLOC_BUFFER_ENTRY);
   RECORD(SM_SLOC_BUFFER_BLOB);
+  RECORD(SM_SLOC_BUFFER_BLOB_COMPRESSED);
   RECORD(SM_SLOC_EXPANSION_ENTRY);
 
   // Preprocessor Block.
@@ -1323,6 +1341,13 @@ uint64_t ASTWriter::WriteControlBlock(Preprocessor &PP,
   }
   Record.push_back(LangOpts.CommentOpts.ParseAllComments);
 
+  // OpenMP offloading options.
+  Record.push_back(LangOpts.OMPTargetTriples.size());
+  for (auto &T : LangOpts.OMPTargetTriples)
+    AddString(T.getTriple(), Record);
+
+  AddString(LangOpts.OMPHostIRFile, Record);
+
   Stream.EmitRecord(LANGUAGE_OPTIONS, Record);
 
   // Target options.
@@ -1615,11 +1640,15 @@ static unsigned CreateSLocBufferAbbrev(llvm::BitstreamWriter &Stream) {
 
 /// \brief Create an abbreviation for the SLocEntry that refers to a
 /// buffer's blob.
-static unsigned CreateSLocBufferBlobAbbrev(llvm::BitstreamWriter &Stream) {
+static unsigned CreateSLocBufferBlobAbbrev(llvm::BitstreamWriter &Stream,
+                                           bool Compressed) {
   using namespace llvm;
 
   auto *Abbrev = new BitCodeAbbrev();
-  Abbrev->Add(BitCodeAbbrevOp(SM_SLOC_BUFFER_BLOB));
+  Abbrev->Add(BitCodeAbbrevOp(Compressed ? SM_SLOC_BUFFER_BLOB_COMPRESSED
+                                         : SM_SLOC_BUFFER_BLOB));
+  if (Compressed)
+    Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8)); // Uncompressed size
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // Blob
   return Stream.EmitAbbrev(Abbrev);
 }
@@ -1841,12 +1870,14 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
   RecordData Record;
 
   // Enter the source manager block.
-  Stream.EnterSubblock(SOURCE_MANAGER_BLOCK_ID, 3);
+  Stream.EnterSubblock(SOURCE_MANAGER_BLOCK_ID, 4);
 
   // Abbreviations for the various kinds of source-location entries.
   unsigned SLocFileAbbrv = CreateSLocFileAbbrev(Stream);
   unsigned SLocBufferAbbrv = CreateSLocBufferAbbrev(Stream);
-  unsigned SLocBufferBlobAbbrv = CreateSLocBufferBlobAbbrev(Stream);
+  unsigned SLocBufferBlobAbbrv = CreateSLocBufferBlobAbbrev(Stream, false);
+  unsigned SLocBufferBlobCompressedAbbrv =
+      CreateSLocBufferBlobAbbrev(Stream, true);
   unsigned SLocExpansionAbbrv = CreateSLocExpansionAbbrev(Stream);
 
   // Write out the source location entry table. We skip the first
@@ -1881,11 +1912,12 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
     Record.push_back(SLoc->getOffset() - 2);
     if (SLoc->isFile()) {
       const SrcMgr::FileInfo &File = SLoc->getFile();
-      Record.push_back(File.getIncludeLoc().getRawEncoding());
+      AddSourceLocation(File.getIncludeLoc(), Record);
       Record.push_back(File.getFileCharacteristic()); // FIXME: stable encoding
       Record.push_back(File.hasLineDirectives());
 
       const SrcMgr::ContentCache *Content = File.getContentCache();
+      bool EmitBlob = false;
       if (Content->OrigEntry) {
         assert(Content->OrigEntry == Content->ContentsEntry &&
                "Writing to AST an overridden file is not supported");
@@ -1907,14 +1939,8 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
         
         Stream.EmitRecordWithAbbrev(SLocFileAbbrv, Record);
         
-        if (Content->BufferOverridden || Content->IsTransient) {
-          RecordData::value_type Record[] = {SM_SLOC_BUFFER_BLOB};
-          const llvm::MemoryBuffer *Buffer
-            = Content->getBuffer(PP.getDiagnostics(), PP.getSourceManager());
-          Stream.EmitRecordWithBlob(SLocBufferBlobAbbrv, Record,
-                                    StringRef(Buffer->getBufferStart(),
-                                              Buffer->getBufferSize() + 1));          
-        }
+        if (Content->BufferOverridden || Content->IsTransient)
+          EmitBlob = true;
       } else {
         // The source location entry is a buffer. The blob associated
         // with this entry contains the contents of the buffer.
@@ -1927,22 +1953,43 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
         const char *Name = Buffer->getBufferIdentifier();
         Stream.EmitRecordWithBlob(SLocBufferAbbrv, Record,
                                   StringRef(Name, strlen(Name) + 1));
-        RecordData::value_type Record[] = {SM_SLOC_BUFFER_BLOB};
-        Stream.EmitRecordWithBlob(SLocBufferBlobAbbrv, Record,
-                                  StringRef(Buffer->getBufferStart(),
-                                                  Buffer->getBufferSize() + 1));
+        EmitBlob = true;
 
         if (strcmp(Name, "<built-in>") == 0) {
           PreloadSLocs.push_back(SLocEntryOffsets.size());
         }
       }
+
+      if (EmitBlob) {
+        // Include the implicit terminating null character in the on-disk buffer
+        // if we're writing it uncompressed.
+        const llvm::MemoryBuffer *Buffer =
+            Content->getBuffer(PP.getDiagnostics(), PP.getSourceManager());
+        StringRef Blob(Buffer->getBufferStart(), Buffer->getBufferSize() + 1);
+
+        // Compress the buffer if possible. We expect that almost all PCM
+        // consumers will not want its contents.
+        SmallString<0> CompressedBuffer;
+        if (llvm::zlib::compress(Blob.drop_back(1), CompressedBuffer) ==
+            llvm::zlib::StatusOK) {
+          RecordData::value_type Record[] = {SM_SLOC_BUFFER_BLOB_COMPRESSED,
+                                             Blob.size() - 1};
+          Stream.EmitRecordWithBlob(SLocBufferBlobCompressedAbbrv, Record,
+                                    CompressedBuffer);
+        } else {
+          RecordData::value_type Record[] = {SM_SLOC_BUFFER_BLOB};
+          Stream.EmitRecordWithBlob(SLocBufferBlobAbbrv, Record, Blob);
+        }
+      }
     } else {
       // The source location entry is a macro expansion.
       const SrcMgr::ExpansionInfo &Expansion = SLoc->getExpansion();
-      Record.push_back(Expansion.getSpellingLoc().getRawEncoding());
-      Record.push_back(Expansion.getExpansionLocStart().getRawEncoding());
-      Record.push_back(Expansion.isMacroArgExpansion() ? 0
-                             : Expansion.getExpansionLocEnd().getRawEncoding());
+      AddSourceLocation(Expansion.getSpellingLoc(), Record);
+      AddSourceLocation(Expansion.getExpansionLocStart(), Record);
+      AddSourceLocation(Expansion.isMacroArgExpansion()
+                            ? SourceLocation()
+                            : Expansion.getExpansionLocEnd(),
+                        Record);
 
       // Compute the token length for this macro expansion.
       unsigned NextOffset = SourceMgr.getNextLocalOffset();
@@ -2624,7 +2671,7 @@ void ASTWriter::WritePragmaDiagnosticMappings(const DiagnosticsEngine &Diag,
     if (point.Loc.isInvalid())
       continue;
 
-    Record.push_back(point.Loc.getRawEncoding());
+    AddSourceLocation(point.Loc, Record);
     unsigned &DiagStateID = DiagStateIDMap[point.State];
     Record.push_back(DiagStateID);
     
@@ -3146,6 +3193,8 @@ public:
         NeedDecls(!IsModule || !Writer.getLangOpts().CPlusPlus),
         InterestingIdentifierOffsets(InterestingIdentifierOffsets) {}
 
+  bool needDecls() const { return NeedDecls; }
+
   static hash_value_type ComputeHash(const IdentifierInfo* II) {
     return llvm::HashString(II->getName());
   }
@@ -3291,7 +3340,9 @@ void ASTWriter::WriteIdentifierTable(Preprocessor &PP,
       auto *II = const_cast<IdentifierInfo *>(IdentIDPair.first);
       IdentID ID = IdentIDPair.second;
       assert(II && "NULL identifier in identifier table");
-      if (!Chain || !II->isFromAST() || II->hasChangedSinceDeserialization())
+      if (!Chain || !II->isFromAST() || II->hasChangedSinceDeserialization() ||
+          (Trait.needDecls() &&
+           II->hasFETokenInfoChangedSinceDeserialization()))
         Generator.insert(II, ID, Trait);
     }
 
@@ -3880,6 +3931,22 @@ void ASTWriter::WriteOptimizePragmaOptions(Sema &SemaRef) {
   Stream.EmitRecord(OPTIMIZE_PRAGMA_OPTIONS, Record);
 }
 
+/// \brief Write the state of 'pragma ms_struct' at the end of the module.
+void ASTWriter::WriteMSStructPragmaOptions(Sema &SemaRef) {
+  RecordData Record;
+  Record.push_back(SemaRef.MSStructPragmaOn ? PMSST_ON : PMSST_OFF);
+  Stream.EmitRecord(MSSTRUCT_PRAGMA_OPTIONS, Record);
+}
+
+/// \brief Write the state of 'pragma pointers_to_members' at the end of the
+//module.
+void ASTWriter::WriteMSPointersToMembersPragmaOptions(Sema &SemaRef) {
+  RecordData Record;
+  Record.push_back(SemaRef.MSPointerToMemberRepresentationMethod);
+  AddSourceLocation(SemaRef.ImplicitMSInheritanceAttrLoc, Record);
+  Stream.EmitRecord(POINTERS_TO_MEMBERS_PRAGMA_OPTIONS, Record);
+}
+
 void ASTWriter::WriteModuleFileExtension(Sema &SemaRef,
                                          ModuleFileExtensionWriter &Writer) {
   // Enter the extension block.
@@ -4136,6 +4203,10 @@ uint64_t ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
   RegisterPredefDecl(Context.ExternCContext, PREDEF_DECL_EXTERN_C_CONTEXT_ID);
   RegisterPredefDecl(Context.MakeIntegerSeqDecl,
                      PREDEF_DECL_MAKE_INTEGER_SEQ_ID);
+  RegisterPredefDecl(Context.CFConstantStringTypeDecl,
+                     PREDEF_DECL_CF_CONSTANT_STRING_ID);
+  RegisterPredefDecl(Context.CFConstantStringTagDecl,
+                     PREDEF_DECL_CF_CONSTANT_STRING_TAG_ID);
 
   // Build a record containing all of the tentative definitions in this file, in
   // TentativeDefinitions order.  Generally, this record will be empty for
@@ -4551,10 +4622,12 @@ uint64_t ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
     }
   }
 
-  WriteDeclReplacementsBlock();
   WriteObjCCategories();
-  if(!WritingModule)
+  if(!WritingModule) {
     WriteOptimizePragmaOptions(SemaRef);
+    WriteMSStructPragmaOptions(SemaRef);
+    WriteMSPointersToMembersPragmaOptions(SemaRef);
+  }
 
   // Some simple statistics
   RecordData::value_type Record[] = {
@@ -4602,6 +4675,11 @@ void ASTWriter::WriteDeclUpdatesBlocks(RecordDataImpl &OffsetsRecord) {
 
       case UPD_CXX_INSTANTIATED_STATIC_DATA_MEMBER:
         AddSourceLocation(Update.getLoc(), Record);
+        break;
+
+      case UPD_CXX_INSTANTIATED_DEFAULT_ARGUMENT:
+        AddStmt(const_cast<Expr*>(
+                  cast<ParmVarDecl>(Update.getDecl())->getDefaultArg()));
         break;
 
       case UPD_CXX_INSTANTIATED_CLASS_DEFINITION: {
@@ -4705,21 +4783,9 @@ void ASTWriter::WriteDeclUpdatesBlocks(RecordDataImpl &OffsetsRecord) {
   }
 }
 
-void ASTWriter::WriteDeclReplacementsBlock() {
-  if (ReplacedDecls.empty())
-    return;
-
-  RecordData Record;
-  for (const auto &I : ReplacedDecls) {
-    Record.push_back(I.ID);
-    Record.push_back(I.Offset);
-    Record.push_back(I.Loc);
-  }
-  Stream.EmitRecord(DECL_REPLACEMENTS, Record);
-}
-
 void ASTWriter::AddSourceLocation(SourceLocation Loc, RecordDataImpl &Record) {
-  Record.push_back(Loc.getRawEncoding());
+  uint32_t Raw = Loc.getRawEncoding();
+  Record.push_back((Raw << 1) | (Raw >> 31));
 }
 
 void ASTWriter::AddSourceRange(SourceRange Range, RecordDataImpl &Record) {
@@ -5496,6 +5562,7 @@ void ASTWriter::AddCXXDefinitionData(const CXXRecordDecl *D, RecordDataImpl &Rec
   Record.push_back(Data.HasOnlyCMembers);
   Record.push_back(Data.HasInClassInitializer);
   Record.push_back(Data.HasUninitializedReferenceMember);
+  Record.push_back(Data.HasUninitializedFields);
   Record.push_back(Data.NeedOverloadResolutionForMoveConstructor);
   Record.push_back(Data.NeedOverloadResolutionForMoveAssignment);
   Record.push_back(Data.NeedOverloadResolutionForDestructor);
@@ -5506,6 +5573,7 @@ void ASTWriter::AddCXXDefinitionData(const CXXRecordDecl *D, RecordDataImpl &Rec
   Record.push_back(Data.DeclaredNonTrivialSpecialMembers);
   Record.push_back(Data.HasIrrelevantDestructor);
   Record.push_back(Data.HasConstexprNonCopyMoveConstructor);
+  Record.push_back(Data.HasDefaultedDefaultConstructor);
   Record.push_back(Data.DefaultedDefaultConstructorIsConstexpr);
   Record.push_back(Data.HasConstexprDefaultConstructor);
   Record.push_back(Data.HasNonLiteralTypeFieldsOrBases);
@@ -5551,6 +5619,7 @@ void ASTWriter::AddCXXDefinitionData(const CXXRecordDecl *D, RecordDataImpl &Rec
       Record.push_back(Capture.isImplicit());
       Record.push_back(Capture.getCaptureKind());
       switch (Capture.getCaptureKind()) {
+      case LCK_StarThis:
       case LCK_This:
       case LCK_VLAType:
         break;
@@ -5671,8 +5740,16 @@ static bool isImportedDeclContext(ASTReader *Chain, const Decl *D) {
 }
 
 void ASTWriter::AddedVisibleDecl(const DeclContext *DC, const Decl *D) {
-  // TU and namespaces are handled elsewhere.
-  if (isa<TranslationUnitDecl>(DC) || isa<NamespaceDecl>(DC))
+  // TU is handled elsewhere.
+  if (isa<TranslationUnitDecl>(DC))
+    return;
+
+  // Namespaces are handled elsewhere, except for template instantiations of
+  // FunctionTemplateDecls in namespaces. We are interested in cases where the
+  // local instantiations are added to an imported context. Only happens when
+  // adding ADL lookup candidates, for example templated friends.
+  if (isa<NamespaceDecl>(DC) && D->getFriendObjectKind() == Decl::FOK_None &&
+      !isa<FunctionTemplateDecl>(D))
     return;
 
   // We're only interested in cases where a local declaration is added to an
@@ -5770,6 +5847,15 @@ void ASTWriter::StaticDataMemberInstantiated(const VarDecl *D) {
   DeclUpdates[D].push_back(
       DeclUpdate(UPD_CXX_INSTANTIATED_STATIC_DATA_MEMBER,
        D->getMemberSpecializationInfo()->getPointOfInstantiation()));
+}
+
+void ASTWriter::DefaultArgumentInstantiated(const ParmVarDecl *D) {
+  assert(!WritingAST && "Already writing the AST!");
+  if (!D->isFromASTFile())
+    return;
+
+  DeclUpdates[D].push_back(
+      DeclUpdate(UPD_CXX_INSTANTIATED_DEFAULT_ARGUMENT, D));
 }
 
 void ASTWriter::AddedObjCCategoryToInterface(const ObjCCategoryDecl *CatD,
