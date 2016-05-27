@@ -64,6 +64,7 @@ llvm-tools: \
     obj2yaml \
     opt \
     sancov \
+    sanstats \
     verify-uselistorder \
     yaml2obj \
     yaml-bench
