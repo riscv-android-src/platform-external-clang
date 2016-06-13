@@ -6095,6 +6095,7 @@ TEST_F(FormatTest, FormatsFunctionTypes) {
   verifyFormat("some_var = function(*some_pointer_var)[0];");
   verifyFormat("void f() { function(*some_pointer_var)[0] = 10; }");
   verifyFormat("int x = f(&h)();");
+  verifyFormat("returnsFunction(&param1, &param2)(param);");
 }
 
 TEST_F(FormatTest, FormatsPointersToArrayTypes) {
