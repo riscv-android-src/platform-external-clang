@@ -94,6 +94,7 @@ LOCAL_STATIC_LIBRARIES := \
   libLLVMTarget \
   libLLVMGlobalISel \
   libLLVMProfileData \
+  libLLVMProfileDataCoverage \
   libLLVMObject \
   libLLVMMCDisassembler \
   libLLVMSupport
