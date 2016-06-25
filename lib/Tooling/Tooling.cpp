@@ -31,6 +31,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/raw_ostream.h"
+#include <utility>
 
 #define DEBUG_TYPE "clang-tooling"
 
@@ -208,14 +209,16 @@ ToolInvocation::ToolInvocation(
     std::vector<std::string> CommandLine, ToolAction *Action,
     FileManager *Files, std::shared_ptr<PCHContainerOperations> PCHContainerOps)
     : CommandLine(std::move(CommandLine)), Action(Action), OwnsAction(false),
-      Files(Files), PCHContainerOps(PCHContainerOps), DiagConsumer(nullptr) {}
+      Files(Files), PCHContainerOps(std::move(PCHContainerOps)),
+      DiagConsumer(nullptr) {}
 
 ToolInvocation::ToolInvocation(
     std::vector<std::string> CommandLine, FrontendAction *FAction,
     FileManager *Files, std::shared_ptr<PCHContainerOperations> PCHContainerOps)
     : CommandLine(std::move(CommandLine)),
       Action(new SingleFrontendActionFactory(FAction)), OwnsAction(true),
-      Files(Files), PCHContainerOps(PCHContainerOps), DiagConsumer(nullptr) {}
+      Files(Files), PCHContainerOps(std::move(PCHContainerOps)),
+      DiagConsumer(nullptr) {}
 
 ToolInvocation::~ToolInvocation() {
   if (OwnsAction)
@@ -311,7 +314,7 @@ ClangTool::ClangTool(const CompilationDatabase &Compilations,
                      ArrayRef<std::string> SourcePaths,
                      std::shared_ptr<PCHContainerOperations> PCHContainerOps)
     : Compilations(Compilations), SourcePaths(SourcePaths),
-      PCHContainerOps(PCHContainerOps),
+      PCHContainerOps(std::move(PCHContainerOps)),
       OverlayFileSystem(new vfs::OverlayFileSystem(vfs::getRealFileSystem())),
       InMemoryFileSystem(new vfs::InMemoryFileSystem),
       Files(new FileManager(FileSystemOptions(), OverlayFileSystem)),
@@ -338,17 +341,22 @@ void ClangTool::clearArgumentsAdjusters() {
   ArgsAdjuster = nullptr;
 }
 
+static void injectResourceDir(CommandLineArguments &Args, const char *Argv0,
+                              void *MainAddr) {
+  // Allow users to override the resource dir.
+  for (StringRef Arg : Args)
+    if (Arg.startswith("-resource-dir"))
+      return;
+
+  // If there's no override in place add our resource dir.
+  Args.push_back("-resource-dir=" +
+                 CompilerInvocation::GetResourcesPath(Argv0, MainAddr));
+}
+
 int ClangTool::run(ToolAction *Action) {
   // Exists solely for the purpose of lookup of the resource path.
   // This just needs to be some symbol in the binary.
   static int StaticSymbol;
-  // The driver detects the builtin header path based on the path of the
-  // executable.
-  // FIXME: On linux, GetMainExecutable is independent of the value of the
-  // first argument, thus allowing ClangTool and runToolOnCode to just
-  // pass in made-up names here. Make sure this works on other platforms.
-  std::string MainExecutable =
-      llvm::sys::fs::getMainExecutable("clang_tool", &StaticSymbol);
 
   llvm::SmallString<128> InitialDirectory;
   if (std::error_code EC = llvm::sys::fs::current_path(InitialDirectory))
@@ -413,7 +421,17 @@ int ClangTool::run(ToolAction *Action) {
       if (ArgsAdjuster)
         CommandLine = ArgsAdjuster(CommandLine, CompileCommand.Filename);
       assert(!CommandLine.empty());
-      CommandLine[0] = MainExecutable;
+
+      // Add the resource dir based on the binary of this tool. argv[0] in the
+      // compilation database may refer to a different compiler and we want to
+      // pick up the very same standard library that compiler is using. The
+      // builtin headers in the resource dir need to match the exact clang
+      // version the tool is using.
+      // FIXME: On linux, GetMainExecutable is independent of the value of the
+      // first argument, thus allowing ClangTool and runToolOnCode to just
+      // pass in made-up names here. Make sure this works on other platforms.
+      injectResourceDir(CommandLine, "clang_tool", &StaticSymbol);
+
       // FIXME: We need a callback mechanism for the tool writer to output a
       // customized message for each file.
       DEBUG({ llvm::dbgs() << "Processing: " << File << ".\n"; });
