@@ -16,14 +16,16 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/Config/llvm-config.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/YAMLParser.h"
-#include "llvm/Config/llvm-config.h"
 #include <atomic>
 #include <memory>
+#include <utility>
 
 // For chdir.
 #ifdef LLVM_ON_WIN32
@@ -718,7 +720,13 @@ public:
                             Status S)
       : Entry(EK_Directory, Name), Contents(std::move(Contents)),
         S(std::move(S)) {}
+  RedirectingDirectoryEntry(StringRef Name, Status S)
+      : Entry(EK_Directory, Name), S(std::move(S)) {}
   Status getStatus() { return S; }
+  void addContent(std::unique_ptr<Entry> Content) {
+    Contents.push_back(std::move(Content));
+  }
+  Entry *getLastContent() const { return Contents.back().get(); }
   typedef decltype(Contents)::iterator iterator;
   iterator contents_begin() { return Contents.begin(); }
   iterator contents_end() { return Contents.end(); }
@@ -746,6 +754,7 @@ public:
     return UseName == NK_NotSet ? GlobalUseExternalName
                                 : (UseName == NK_External);
   }
+  NameKind getUseName() const { return UseName; }
   static bool classof(const Entry *E) { return E->getKind() == EK_File; }
 };
 
@@ -834,7 +843,7 @@ class RedirectingFileSystem : public vfs::FileSystem {
   /// \brief Whether to perform case-sensitive comparisons.
   ///
   /// Currently, case-insensitive matching only works correctly with ASCII.
-  bool CaseSensitive;
+  bool CaseSensitive = true;
 
   /// IsRelativeOverlay marks whether a IsExternalContentsPrefixDir path must
   /// be prefixed in every 'external-contents' when reading from YAML files.
@@ -842,7 +851,7 @@ class RedirectingFileSystem : public vfs::FileSystem {
 
   /// \brief Whether to use to use the value of 'external-contents' for the
   /// names of files.  This global value is overridable on a per-file basis.
-  bool UseExternalNames;
+  bool UseExternalNames = true;
   /// @}
 
   /// Virtual file paths and external files could be canonicalized without "..",
@@ -859,7 +868,7 @@ class RedirectingFileSystem : public vfs::FileSystem {
 
 private:
   RedirectingFileSystem(IntrusiveRefCntPtr<FileSystem> ExternalFS)
-      : ExternalFS(ExternalFS), CaseSensitive(true), UseExternalNames(true) {}
+      : ExternalFS(std::move(ExternalFS)) {}
 
   /// \brief Looks up \p Path in \c Roots.
   ErrorOr<Entry *> lookupPath(const Twine &Path);
@@ -919,6 +928,29 @@ public:
   StringRef getExternalContentsPrefixDir() const {
     return ExternalContentsPrefixDir;
   }
+
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+LLVM_DUMP_METHOD void dump() const {
+    for (const std::unique_ptr<Entry> &Root : Roots)
+      dumpEntry(Root.get());
+  }
+
+LLVM_DUMP_METHOD void dumpEntry(Entry *E, int NumSpaces = 0) const {
+    StringRef Name = E->getName();
+    for (int i = 0, e = NumSpaces; i < e; ++i)
+      dbgs() << " ";
+    dbgs() << "'" << Name.str().c_str() << "'" << "\n";
+
+    if (E->getKind() == EK_Directory) {
+      auto *DE = dyn_cast<RedirectingDirectoryEntry>(E);
+      assert(DE && "Should be a directory");
+
+      for (std::unique_ptr<Entry> &SubEntry :
+           llvm::make_range(DE->contents_begin(), DE->contents_end()))
+        dumpEntry(SubEntry.get(), NumSpaces+2);
+    }
+  }
+#endif
 
 };
 
@@ -997,6 +1029,70 @@ class RedirectingFileSystemParser {
       }
     }
     return true;
+  }
+
+  Entry *lookupOrCreateEntry(RedirectingFileSystem *FS, StringRef Name,
+                             Entry *ParentEntry = nullptr) {
+    if (!ParentEntry) { // Look for a existent root
+      for (const std::unique_ptr<Entry> &Root : FS->Roots) {
+        if (Name.equals(Root->getName())) {
+          ParentEntry = Root.get();
+          return ParentEntry;
+        }
+      }
+    } else { // Advance to the next component
+      auto *DE = dyn_cast<RedirectingDirectoryEntry>(ParentEntry);
+      for (std::unique_ptr<Entry> &Content :
+           llvm::make_range(DE->contents_begin(), DE->contents_end())) {
+        auto *DirContent = dyn_cast<RedirectingDirectoryEntry>(Content.get());
+        if (DirContent && Name.equals(Content->getName()))
+          return DirContent;
+      }
+    }
+
+    // ... or create a new one
+    std::unique_ptr<Entry> E = llvm::make_unique<RedirectingDirectoryEntry>(
+        Name, Status("", getNextVirtualUniqueID(), sys::TimeValue::now(), 0, 0,
+                     0, file_type::directory_file, sys::fs::all_all));
+
+    if (!ParentEntry) { // Add a new root to the overlay
+      FS->Roots.push_back(std::move(E));
+      ParentEntry = FS->Roots.back().get();
+      return ParentEntry;
+    }
+
+    auto *DE = dyn_cast<RedirectingDirectoryEntry>(ParentEntry);
+    DE->addContent(std::move(E));
+    return DE->getLastContent();
+  }
+
+  void uniqueOverlayTree(RedirectingFileSystem *FS, Entry *SrcE,
+                         Entry *NewParentE = nullptr) {
+    StringRef Name = SrcE->getName();
+    switch (SrcE->getKind()) {
+    case EK_Directory: {
+      auto *DE = dyn_cast<RedirectingDirectoryEntry>(SrcE);
+      assert(DE && "Must be a directory");
+      // Empty directories could be present in the YAML as a way to
+      // describe a file for a current directory after some of its subdir
+      // is parsed. This only leads to redundant walks, ignore it.
+      if (!Name.empty())
+        NewParentE = lookupOrCreateEntry(FS, Name, NewParentE);
+      for (std::unique_ptr<Entry> &SubEntry :
+           llvm::make_range(DE->contents_begin(), DE->contents_end()))
+        uniqueOverlayTree(FS, SubEntry.get(), NewParentE);
+      break;
+    }
+    case EK_File: {
+      auto *FE = dyn_cast<RedirectingFileEntry>(SrcE);
+      assert(FE && "Must be a file");
+      assert(NewParentE && "Parent entry must exist");
+      auto *DE = dyn_cast<RedirectingDirectoryEntry>(NewParentE);
+      DE->addContent(llvm::make_unique<RedirectingFileEntry>(
+          Name, FE->getExternalContentsPath(), FE->getUseName()));
+      break;
+    }
+    }
   }
 
   std::unique_ptr<Entry> parseEntry(yaml::Node *N, RedirectingFileSystem *FS) {
@@ -1201,6 +1297,7 @@ public:
     };
 
     DenseMap<StringRef, KeyStatus> Keys(std::begin(Fields), std::end(Fields));
+    std::vector<std::unique_ptr<Entry>> RootEntries;
 
     // Parse configuration and 'roots'
     for (yaml::MappingNode::iterator I = Top->begin(), E = Top->end(); I != E;
@@ -1223,7 +1320,7 @@ public:
         for (yaml::SequenceNode::iterator I = Roots->begin(), E = Roots->end();
              I != E; ++I) {
           if (std::unique_ptr<Entry> E = parseEntry(&*I, FS))
-            FS->Roots.push_back(std::move(E));
+            RootEntries.push_back(std::move(E));
           else
             return false;
         }
@@ -1264,6 +1361,13 @@ public:
 
     if (!checkMissingKeys(Top, Keys))
       return false;
+
+    // Now that we sucessefully parsed the YAML file, canonicalize the internal
+    // representation to a proper directory tree so that we can search faster
+    // inside the VFS.
+    for (std::unique_ptr<Entry> &E : RootEntries)
+      uniqueOverlayTree(FS, E.get());
+
     return true;
   }
 };
@@ -1358,16 +1462,21 @@ RedirectingFileSystem::lookupPath(sys::path::const_iterator Start,
     ++Start;
 #endif
 
-  if (CaseSensitive ? !Start->equals(From->getName())
-                    : !Start->equals_lower(From->getName()))
-    // failure to match
-    return make_error_code(llvm::errc::no_such_file_or_directory);
+  StringRef FromName = From->getName();
 
-  ++Start;
+  // Forward the search to the next component in case this is an empty one.
+  if (!FromName.empty()) {
+    if (CaseSensitive ? !Start->equals(FromName)
+                      : !Start->equals_lower(FromName))
+      // failure to match
+      return make_error_code(llvm::errc::no_such_file_or_directory);
 
-  if (Start == End) {
-    // Match!
-    return From;
+    ++Start;
+
+    if (Start == End) {
+      // Match!
+      return From;
+    }
   }
 
   auto *DE = dyn_cast<RedirectingDirectoryEntry>(From);
@@ -1422,7 +1531,7 @@ class FileWithFixedStatus : public File {
 
 public:
   FileWithFixedStatus(std::unique_ptr<File> InnerFile, Status S)
-      : InnerFile(std::move(InnerFile)), S(S) {}
+      : InnerFile(std::move(InnerFile)), S(std::move(S)) {}
 
   ErrorOr<Status> status() override { return S; }
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
@@ -1499,8 +1608,9 @@ class JSONWriter {
 
 public:
   JSONWriter(llvm::raw_ostream &OS) : OS(OS) {}
-  void write(ArrayRef<YAMLVFSEntry> Entries, Optional<bool> IsCaseSensitive,
-             Optional<bool> IsOverlayRelative, StringRef OverlayDir);
+  void write(ArrayRef<YAMLVFSEntry> Entries, Optional<bool> UseExternalNames,
+             Optional<bool> IsCaseSensitive, Optional<bool> IsOverlayRelative,
+             StringRef OverlayDir);
 };
 }
 
@@ -1553,6 +1663,7 @@ void JSONWriter::writeEntry(StringRef VPath, StringRef RPath) {
 }
 
 void JSONWriter::write(ArrayRef<YAMLVFSEntry> Entries,
+                       Optional<bool> UseExternalNames,
                        Optional<bool> IsCaseSensitive,
                        Optional<bool> IsOverlayRelative,
                        StringRef OverlayDir) {
@@ -1563,6 +1674,9 @@ void JSONWriter::write(ArrayRef<YAMLVFSEntry> Entries,
   if (IsCaseSensitive.hasValue())
     OS << "  'case-sensitive': '"
        << (IsCaseSensitive.getValue() ? "true" : "false") << "',\n";
+  if (UseExternalNames.hasValue())
+    OS << "  'use-external-names': '"
+       << (UseExternalNames.getValue() ? "true" : "false") << "',\n";
   bool UseOverlayRelative = false;
   if (IsOverlayRelative.hasValue()) {
     UseOverlayRelative = IsOverlayRelative.getValue();
@@ -1624,8 +1738,8 @@ void YAMLVFSWriter::write(llvm::raw_ostream &OS) {
     return LHS.VPath < RHS.VPath;
   });
 
-  JSONWriter(OS).write(Mappings, IsCaseSensitive, IsOverlayRelative,
-                       OverlayDir);
+  JSONWriter(OS).write(Mappings, UseExternalNames, IsCaseSensitive,
+                       IsOverlayRelative, OverlayDir);
 }
 
 VFSFromYamlDirIterImpl::VFSFromYamlDirIterImpl(

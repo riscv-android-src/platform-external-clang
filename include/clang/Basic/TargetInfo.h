@@ -58,13 +58,14 @@ protected:
   bool BigEndian;
   bool TLSSupported;
   bool NoAsmVariants;  // True if {|} are normal characters.
+  bool HasFloat128;
   unsigned char PointerWidth, PointerAlign;
   unsigned char BoolWidth, BoolAlign;
   unsigned char IntWidth, IntAlign;
   unsigned char HalfWidth, HalfAlign;
   unsigned char FloatWidth, FloatAlign;
   unsigned char DoubleWidth, DoubleAlign;
-  unsigned char LongDoubleWidth, LongDoubleAlign;
+  unsigned char LongDoubleWidth, LongDoubleAlign, Float128Align;
   unsigned char LargeArrayMinWidth, LargeArrayAlign;
   unsigned char LongWidth, LongAlign;
   unsigned char LongLongWidth, LongLongAlign;
@@ -78,7 +79,7 @@ protected:
   std::unique_ptr<llvm::DataLayout> DataLayout;
   const char *MCountName;
   const llvm::fltSemantics *HalfFormat, *FloatFormat, *DoubleFormat,
-    *LongDoubleFormat;
+    *LongDoubleFormat, *Float128Format;
   unsigned char RegParmMax, SSERegParmMax;
   TargetCXXABI TheCXXABI;
   const LangAS::Map *AddrSpaceMap;
@@ -136,7 +137,8 @@ public:
     NoFloat = 255,
     Float = 0,
     Double,
-    LongDouble
+    LongDouble,
+    Float128
   };
 
   /// \brief The different kinds of __builtin_va_list types defined by
@@ -327,6 +329,9 @@ public:
     return getPointerWidth(0) >= 64;
   } // FIXME
 
+  /// \brief Determine whether the __float128 type is supported on this target.
+  virtual bool hasFloat128Type() const { return HasFloat128; }
+
   /// \brief Return the alignment that is suitable for storing any
   /// object with a fundamental alignment requirement.
   unsigned getSuitableAlign() const { return SuitableAlign; }
@@ -379,6 +384,14 @@ public:
     return *LongDoubleFormat;
   }
 
+  /// getFloat128Width/Align/Format - Return the size/align/format of
+  /// '__float128'.
+  unsigned getFloat128Width() const { return 128; }
+  unsigned getFloat128Align() const { return Float128Align; }
+  const llvm::fltSemantics &getFloat128Format() const {
+    return *Float128Format;
+  }
+
   /// \brief Return true if the 'long double' type should be mangled like
   /// __float128.
   virtual bool useFloat128ManglingForLongDouble() const { return false; }
@@ -413,6 +426,21 @@ public:
   /// value is type-specific, but this alignment can be used for most of the
   /// types for the given target.
   unsigned getSimdDefaultAlign() const { return SimdDefaultAlign; }
+
+  /// Return the alignment (in bits) of the thrown exception object. This is
+  /// only meaningful for targets that allocate C++ exceptions in a system
+  /// runtime, such as those using the Itanium C++ ABI.
+  virtual unsigned getExnObjectAlignment() const {
+    // Itanium says that an _Unwind_Exception has to be "double-word"
+    // aligned (and thus the end of it is also so-aligned), meaning 16
+    // bytes.  Of course, that was written for the actual Itanium,
+    // which is a 64-bit platform.  Classically, the ABI doesn't really
+    // specify the alignment on other platforms, but in practice
+    // libUnwind declares the struct with __attribute__((aligned)), so
+    // we assume that alignment here.  (It's generally 16 bytes, but
+    // some targets overwrite it.)
+    return getDefaultAlignForAttributeAligned();
+  }
 
   /// \brief Return the size of intmax_t and uintmax_t for this target, in bits.
   unsigned getIntMaxTWidth() const {
@@ -940,6 +968,19 @@ public:
 
   /// \brief Whether target allows to overalign ABI-specified prefered alignment
   virtual bool allowsLargerPreferedTypeAlignment() const { return true; }
+
+  /// \brief Set supported OpenCL extensions and optional core features.
+  virtual void setSupportedOpenCLOpts() {}
+
+  /// \brief Get supported OpenCL extensions and optional core features.
+  OpenCLOptions &getSupportedOpenCLOpts() {
+    return getTargetOpts().SupportedOpenCLOptions;
+  }
+
+  /// \brief Get const supported OpenCL extensions and optional core features.
+  const OpenCLOptions &getSupportedOpenCLOpts() const {
+      return getTargetOpts().SupportedOpenCLOptions;
+  }
 
 protected:
   virtual uint64_t getPointerWidthV(unsigned AddrSpace) const {

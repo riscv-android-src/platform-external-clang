@@ -43,6 +43,8 @@ void CodeGenPGO::setFuncName(StringRef Name,
 
 void CodeGenPGO::setFuncName(llvm::Function *Fn) {
   setFuncName(Fn->getName(), Fn->getLinkage());
+  // Create PGOFuncName meta data.
+  llvm::createPGOFuncNameMetadata(*Fn, FuncName);
 }
 
 namespace {
@@ -755,12 +757,15 @@ void CodeGenPGO::valueProfile(CGBuilderTy &Builder, uint32_t ValueKind,
   if (!ValuePtr || !ValueSite || !Builder.GetInsertBlock())
     return;
 
+  if (isa<llvm::Constant>(ValuePtr))
+    return;
+
   bool InstrumentValueSites = CGM.getCodeGenOpts().hasProfileClangInstr();
   if (InstrumentValueSites && RegionCounterMap) {
-    llvm::LLVMContext &Ctx = CGM.getLLVMContext();
-    auto *I8PtrTy = llvm::Type::getInt8PtrTy(Ctx);
+    auto BuilderInsertPoint = Builder.saveIP();
+    Builder.SetInsertPoint(ValueSite);
     llvm::Value *Args[5] = {
-        llvm::ConstantExpr::getBitCast(FuncNameVar, I8PtrTy),
+        llvm::ConstantExpr::getBitCast(FuncNameVar, Builder.getInt8PtrTy()),
         Builder.getInt64(FunctionHash),
         Builder.CreatePtrToInt(ValuePtr, Builder.getInt64Ty()),
         Builder.getInt32(ValueKind),
@@ -768,6 +773,7 @@ void CodeGenPGO::valueProfile(CGBuilderTy &Builder, uint32_t ValueKind,
     };
     Builder.CreateCall(
         CGM.getIntrinsic(llvm::Intrinsic::instrprof_value_profile), Args);
+    Builder.restoreIP(BuilderInsertPoint);
     return;
   }
 
@@ -794,20 +800,21 @@ void CodeGenPGO::loadRegionCounts(llvm::IndexedInstrProfReader *PGOReader,
                                   bool IsInMainFile) {
   CGM.getPGOStats().addVisited(IsInMainFile);
   RegionCounts.clear();
-  llvm::ErrorOr<llvm::InstrProfRecord> RecordErrorOr =
+  llvm::Expected<llvm::InstrProfRecord> RecordExpected =
       PGOReader->getInstrProfRecord(FuncName, FunctionHash);
-  if (std::error_code EC = RecordErrorOr.getError()) {
-    if (EC == llvm::instrprof_error::unknown_function)
+  if (auto E = RecordExpected.takeError()) {
+    auto IPE = llvm::InstrProfError::take(std::move(E));
+    if (IPE == llvm::instrprof_error::unknown_function)
       CGM.getPGOStats().addMissing(IsInMainFile);
-    else if (EC == llvm::instrprof_error::hash_mismatch)
+    else if (IPE == llvm::instrprof_error::hash_mismatch)
       CGM.getPGOStats().addMismatched(IsInMainFile);
-    else if (EC == llvm::instrprof_error::malformed)
+    else if (IPE == llvm::instrprof_error::malformed)
       // TODO: Consider a more specific warning for this case.
       CGM.getPGOStats().addMismatched(IsInMainFile);
     return;
   }
   ProfRecord =
-      llvm::make_unique<llvm::InstrProfRecord>(std::move(RecordErrorOr.get()));
+      llvm::make_unique<llvm::InstrProfRecord>(std::move(RecordExpected.get()));
   RegionCounts = ProfRecord->Counts;
 }
 
