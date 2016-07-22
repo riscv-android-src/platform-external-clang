@@ -2812,7 +2812,8 @@ public:
 /// __attribute__((ext_vector_type(n)), where "n" is the number of elements.
 /// Unlike vector_size, ext_vector_type is only allowed on typedef's. This
 /// class enables syntactic extensions, like Vector Components for accessing
-/// points, colors, and textures (modeled after OpenGL Shading Language).
+/// points (as .xyzw), colors (as .rgba), and textures (modeled after OpenGL
+/// Shading Language).
 class ExtVectorType : public VectorType {
   ExtVectorType(QualType vecType, unsigned nElements, QualType canonType) :
     VectorType(ExtVector, vecType, nElements, canonType, GenericVector) {}
@@ -2855,13 +2856,15 @@ public:
     }
   }
 
-  static int getAccessorIdx(char c) {
-    if (int idx = getPointAccessorIdx(c)+1) return idx-1;
-    return getNumericAccessorIdx(c);
+  static int getAccessorIdx(char c, bool isNumericAccessor) {
+    if (isNumericAccessor)
+      return getNumericAccessorIdx(c);
+    else
+      return getPointAccessorIdx(c);
   }
 
-  bool isAccessorWithinNumElements(char c) const {
-    if (int idx = getAccessorIdx(c)+1)
+  bool isAccessorWithinNumElements(char c, bool isNumericAccessor) const {
+    if (int idx = getAccessorIdx(c, isNumericAccessor)+1)
       return unsigned(idx-1) < getNumElements();
     return false;
   }
