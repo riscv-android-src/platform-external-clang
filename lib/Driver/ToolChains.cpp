@@ -1298,6 +1298,8 @@ Generic_GCC::GCCVersion Linux::GCCVersion::Parse(StringRef VersionText) {
   if (First.first.getAsInteger(10, GoodVersion.Major) || GoodVersion.Major < 0)
     return BadVersion;
   GoodVersion.MajorStr = First.first.str();
+  if (First.second.empty())
+    return GoodVersion;
   if (Second.first.getAsInteger(10, GoodVersion.Minor) || GoodVersion.Minor < 0)
     return BadVersion;
   GoodVersion.MinorStr = Second.first.str();
@@ -1305,6 +1307,7 @@ Generic_GCC::GCCVersion Linux::GCCVersion::Parse(StringRef VersionText) {
   // First look for a number prefix and parse that if present. Otherwise just
   // stash the entire patch string in the suffix, and leave the number
   // unspecified. This covers versions strings such as:
+  //   5        (handled above)
   //   4.4
   //   4.4.0
   //   4.4.x
@@ -1618,9 +1621,13 @@ bool Generic_GCC::GCCInstallationDetector::getBiarchSibling(Multilib &M) const {
     break;
   case llvm::Triple::x86:
     LibDirs.append(begin(X86LibDirs), end(X86LibDirs));
-    TripleAliases.append(begin(X86Triples), end(X86Triples));
-    BiarchLibDirs.append(begin(X86_64LibDirs), end(X86_64LibDirs));
-    BiarchTripleAliases.append(begin(X86_64Triples), end(X86_64Triples));
+    // MCU toolchain is 32 bit only and its triple alias is TargetTriple
+    // itself, which will be appended below.
+    if (!TargetTriple.isOSIAMCU()) {
+      TripleAliases.append(begin(X86Triples), end(X86Triples));
+      BiarchLibDirs.append(begin(X86_64LibDirs), end(X86_64LibDirs));
+      BiarchTripleAliases.append(begin(X86_64Triples), end(X86_64Triples));
+    }
     break;
   case llvm::Triple::mips:
     LibDirs.append(begin(MIPSLibDirs), end(MIPSLibDirs));
@@ -1770,14 +1777,14 @@ void Generic_GCC::CudaInstallationDetector::print(raw_ostream &OS) const {
 namespace {
 // Filter to remove Multilibs that don't exist as a suffix to Path
 class FilterNonExistent {
-  StringRef Base;
+  StringRef Base, File;
   vfs::FileSystem &VFS;
 
 public:
-  FilterNonExistent(StringRef Base, vfs::FileSystem &VFS)
-      : Base(Base), VFS(VFS) {}
+  FilterNonExistent(StringRef Base, StringRef File, vfs::FileSystem &VFS)
+      : Base(Base), File(File), VFS(VFS) {}
   bool operator()(const Multilib &M) {
-    return !VFS.exists(Base + M.gccSuffix() + "/crtbegin.o");
+    return !VFS.exists(Base + M.gccSuffix() + File);
   }
 };
 } // end anonymous namespace
@@ -1788,6 +1795,10 @@ static void addMultilibFlag(bool Enabled, const char *const Flag,
     Flags.push_back(std::string("+") + Flag);
   else
     Flags.push_back(std::string("-") + Flag);
+}
+
+static bool isArmOrThumbArch(llvm::Triple::ArchType Arch) {
+  return Arch == llvm::Triple::arm || Arch == llvm::Triple::thumb;
 }
 
 static bool isMipsArch(llvm::Triple::ArchType Arch) {
@@ -1863,7 +1874,7 @@ static bool findMIPSMultilibs(const Driver &D, const llvm::Triple &TargetTriple,
   //     /usr
   //       /lib  <= crt*.o files compiled with '-mips32'
 
-  FilterNonExistent NonExistent(Path, D.getVFS());
+  FilterNonExistent NonExistent(Path, "/crtbegin.o", D.getVFS());
 
   // Check for CodeScape MTI toolchain v1.2 and early.
   MultilibSet MtiMipsMultilibsV1;
@@ -2313,6 +2324,48 @@ static bool findMIPSMultilibs(const Driver &D, const llvm::Triple &TargetTriple,
   return false;
 }
 
+static void findAndroidArmMultilibs(const Driver &D,
+                                    const llvm::Triple &TargetTriple,
+                                    StringRef Path, const ArgList &Args,
+                                    DetectedMultilibs &Result) {
+  // Find multilibs with subdirectories like armv7-a, thumb, armv7-a/thumb.
+  FilterNonExistent NonExistent(Path, "/crtbegin.o", D.getVFS());
+  Multilib ArmV7Multilib = makeMultilib("/armv7-a")
+                               .flag("+armv7")
+                               .flag("-thumb");
+  Multilib ThumbMultilib = makeMultilib("/thumb")
+                               .flag("-armv7")
+                               .flag("+thumb");
+  Multilib ArmV7ThumbMultilib = makeMultilib("/armv7-a/thumb")
+                               .flag("+armv7")
+                               .flag("+thumb");
+  Multilib DefaultMultilib = makeMultilib("")
+                               .flag("-armv7")
+                               .flag("-thumb");
+  MultilibSet AndroidArmMultilibs =
+      MultilibSet()
+          .Either(ThumbMultilib, ArmV7Multilib,
+                  ArmV7ThumbMultilib, DefaultMultilib)
+          .FilterOut(NonExistent);
+
+  Multilib::flags_list Flags;
+  llvm::StringRef Arch = Args.getLastArgValue(options::OPT_march_EQ);
+  bool IsArmArch = TargetTriple.getArch() == llvm::Triple::arm;
+  bool IsThumbArch = TargetTriple.getArch() == llvm::Triple::thumb;
+  bool IsV7SubArch = TargetTriple.getSubArch() == llvm::Triple::ARMSubArch_v7;
+  bool IsThumbMode = IsThumbArch ||
+      Args.hasFlag(options::OPT_mthumb, options::OPT_mno_thumb, false) ||
+      (IsArmArch && llvm::ARM::parseArchISA(Arch) == llvm::ARM::IK_THUMB);
+  bool IsArmV7Mode = (IsArmArch || IsThumbArch) &&
+      (llvm::ARM::parseArchVersion(Arch) == 7 ||
+       (IsArmArch && Arch == "" && IsV7SubArch));
+  addMultilibFlag(IsArmV7Mode, "armv7", Flags);
+  addMultilibFlag(IsThumbMode, "thumb", Flags);
+
+  if (AndroidArmMultilibs.select(Flags, Result.SelectedMultilib))
+    Result.Multilibs = AndroidArmMultilibs;
+}
+
 static bool findBiarchMultilibs(const Driver &D,
                                 const llvm::Triple &TargetTriple,
                                 StringRef Path, const ArgList &Args,
@@ -2345,7 +2398,9 @@ static bool findBiarchMultilibs(const Driver &D,
                         .flag("-m64")
                         .flag("+mx32");
 
-  FilterNonExistent NonExistent(Path, D.getVFS());
+  // GCC toolchain for IAMCU doesn't have crtbegin.o, so look for libgcc.a.
+  FilterNonExistent NonExistent(
+      Path, TargetTriple.isOSIAMCU() ? "/libgcc.a" : "/crtbegin.o", D.getVFS());
 
   // Determine default multilib from: 32, 64, x32
   // Also handle cases such as 64 on 32, 32 on 64, etc.
@@ -2504,9 +2559,13 @@ void Generic_GCC::GCCInstallationDetector::ScanLibDirForGCCTriple(
 
       DetectedMultilibs Detected;
 
+      // Android standalone toolchain could have multilibs for ARM and Thumb.
       // Debian mips multilibs behave more like the rest of the biarch ones,
       // so handle them there
-      if (isMipsArch(TargetArch)) {
+      if (isArmOrThumbArch(TargetArch) && TargetTriple.isAndroid()) {
+        // It should also work without multilibs in a simplified toolchain.
+        findAndroidArmMultilibs(D, TargetTriple, LI->getName(), Args, Detected);
+      } else if (isMipsArch(TargetArch)) {
         if (!findMIPSMultilibs(D, TargetTriple, LI->getName(), Args, Detected))
           continue;
       } else if (!findBiarchMultilibs(D, TargetTriple, LI->getName(), Args,
@@ -3928,10 +3987,9 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   if (IsRedhat(Distro) && Distro != RHEL5 && Distro != RHEL6)
     ExtraOpts.push_back("--no-add-needed");
 
-  if ((IsDebian(Distro) && Distro >= DebianSqueeze) || IsOpenSUSE(Distro) ||
-      (IsRedhat(Distro) && Distro != RHEL5) ||
-      (IsUbuntu(Distro) && Distro >= UbuntuKarmic))
-    ExtraOpts.push_back("--build-id");
+#ifdef ENABLE_LINKER_BUILD_ID
+  ExtraOpts.push_back("--build-id");
+#endif
 
   if (IsOpenSUSE(Distro))
     ExtraOpts.push_back("--enable-new-dtags");
@@ -4103,6 +4161,8 @@ std::string Linux::getDynamicLinker(const ArgList &Args) const {
 
   if (Triple.isAndroid())
     return Triple.isArch64Bit() ? "/system/bin/linker64" : "/system/bin/linker";
+  else if (Triple.getEnvironment() == llvm::Triple::Musl)
+    return "/lib/ld-musl-" + Triple.getArchName().str() + ".so.1";
 
   std::string LibDir;
   std::string Loader;
@@ -4475,6 +4535,16 @@ void Linux::AddCudaIncludeArgs(const ArgList &DriverArgs,
   CC1Args.push_back("__clang_cuda_runtime_wrapper.h");
 }
 
+void Linux::AddIAMCUIncludeArgs(const ArgList &DriverArgs,
+                                ArgStringList &CC1Args) const {
+  if (GCCInstallation.isValid()) {
+    CC1Args.push_back("-isystem");
+    CC1Args.push_back(DriverArgs.MakeArgString(
+        GCCInstallation.getParentLibPath() + "/../" +
+        GCCInstallation.getTriple().str() + "/include"));
+  }
+}
+
 bool Linux::isPIEDefault() const { return getSanitizerArgs().requiresPIE(); }
 
 SanitizerMask Linux::getSupportedSanitizers() const {
@@ -4625,8 +4695,10 @@ CudaToolChain::TranslateArgs(const llvm::opt::DerivedArgList &Args,
     DAL->append(A);
   }
 
-  if (BoundArch)
+  if (BoundArch) {
+    DAL->eraseArg(options::OPT_march_EQ);
     DAL->AddJoinedArg(nullptr, Opts.getOption(options::OPT_march_EQ), BoundArch);
+  }
   return DAL;
 }
 

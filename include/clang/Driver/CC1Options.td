@@ -527,8 +527,6 @@ def fblocks_runtime_optional : Flag<["-"], "fblocks-runtime-optional">,
   HelpText<"Weakly link in the blocks runtime">;
 def fexternc_nounwind : Flag<["-"], "fexternc-nounwind">,
   HelpText<"Assume all functions with C linkage do not unwind">;
-def fsjlj_exceptions : Flag<["-"], "fsjlj-exceptions">,
-  HelpText<"Use SjLj style exceptions">;
 def split_dwarf_file : Separate<["-"], "split-dwarf-file">,
   HelpText<"File name to use for split dwarf debug info output">;
 def fno_wchar : Flag<["-"], "fno-wchar">,
@@ -614,6 +612,8 @@ def fallow_half_arguments_and_returns : Flag<["-"], "fallow-half-arguments-and-r
   HelpText<"Allow function arguments and returns of type half">;
 def fdefault_calling_conv_EQ : Joined<["-"], "fdefault-calling-conv=">,
   HelpText<"Set default MS calling convention">;
+def finclude_default_header : Flag<["-"], "finclude-default-header">,
+  HelpText<"Include the default header file for OpenCL">;
 
 // C++ TSes.
 def fcoroutines : Flag<["-"], "fcoroutines">,

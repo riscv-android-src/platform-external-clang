@@ -668,11 +668,11 @@ static bool mustBeJSIdent(const AdditionalKeywords &Keywords,
   // FIXME: This returns true for C/C++ keywords like 'struct'.
   return FormatTok->is(tok::identifier) &&
          (FormatTok->Tok.getIdentifierInfo() == nullptr ||
-          !FormatTok->isOneOf(Keywords.kw_in, Keywords.kw_of, Keywords.kw_async,
-                              Keywords.kw_await, Keywords.kw_yield,
-                              Keywords.kw_finally, Keywords.kw_function,
-                              Keywords.kw_import, Keywords.kw_is,
-                              Keywords.kw_let, Keywords.kw_var,
+          !FormatTok->isOneOf(Keywords.kw_in, Keywords.kw_of, Keywords.kw_as,
+                              Keywords.kw_async, Keywords.kw_await,
+                              Keywords.kw_yield, Keywords.kw_finally,
+                              Keywords.kw_function, Keywords.kw_import,
+                              Keywords.kw_is, Keywords.kw_let, Keywords.kw_var,
                               Keywords.kw_abstract, Keywords.kw_extends,
                               Keywords.kw_implements, Keywords.kw_instanceof,
                               Keywords.kw_interface, Keywords.kw_throws));
@@ -882,10 +882,23 @@ void UnwrappedLineParser::parseStructuralElement() {
                  /*MunchSemi=*/false);
       return;
     }
-    if (Style.Language == FormatStyle::LK_JavaScript &&
-        FormatTok->is(Keywords.kw_import)) {
-      parseJavaScriptEs6ImportExport();
-      return;
+    if (FormatTok->is(Keywords.kw_import)) {
+      if (Style.Language == FormatStyle::LK_JavaScript) {
+        parseJavaScriptEs6ImportExport();
+        return;
+      }
+      if (Style.Language == FormatStyle::LK_Proto) {
+        nextToken();
+        if (FormatTok->is(tok::kw_public))
+          nextToken();
+        if (!FormatTok->is(tok::string_literal))
+          return;
+        nextToken();
+        if (FormatTok->is(tok::semi))
+          nextToken();
+        addUnwrappedLine();
+        return;
+      }
     }
     if (FormatTok->isOneOf(Keywords.kw_signals, Keywords.kw_qsignals,
                            Keywords.kw_slots, Keywords.kw_qslots)) {
