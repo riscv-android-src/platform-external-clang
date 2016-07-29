@@ -64,7 +64,7 @@ def install_directory(src, dst):
 
 
 def build(out_dir, prebuilts_path=None, prebuilts_version=None,
-          build_all_llvm_tools=None):
+          build_all_llvm_tools=None, debug_clang=None):
     products = (
         'aosp_arm',
         'aosp_arm64',
@@ -75,11 +75,11 @@ def build(out_dir, prebuilts_path=None, prebuilts_version=None,
     )
     for product in products:
         build_product(out_dir, product, prebuilts_path, prebuilts_version,
-                      build_all_llvm_tools)
+                      build_all_llvm_tools, debug_clang)
 
 
 def build_product(out_dir, product, prebuilts_path, prebuilts_version,
-                  build_all_llvm_tools):
+                  build_all_llvm_tools, debug_clang):
     env = dict(ORIG_ENV)
     env['DISABLE_LLVM_DEVICE_BUILDS'] = 'true'
     env['DISABLE_RELOCATION_PACKER'] = 'true'
@@ -90,6 +90,10 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
     env['SOONG_ALLOW_MISSING_DEPENDENCIES'] = 'true'
     env['TARGET_BUILD_VARIANT'] = 'userdebug'
     env['TARGET_PRODUCT'] = product
+
+    if debug_clang:
+        env['FORCE_BUILD_LLVM_DEBUG'] = 'true'
+        env['FORCE_BUILD_LLVM_DISABLE_NDEBUG'] = 'true'
 
     overrides = []
     if prebuilts_path is not None:
@@ -115,7 +119,7 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
     if os.path.exists(install_host_dir):
         shutil.rmtree(install_host_dir)
 
-    install_toolchain(build_dir, install_dir, host)
+    install_toolchain(build_dir, install_dir, host, True)
 
     version_file_path = os.path.join(install_dir, 'AndroidVersion.txt')
     with open(version_file_path, 'w') as version_file:
@@ -131,8 +135,8 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
     subprocess.check_call(args)
 
 
-def install_toolchain(build_dir, install_dir, host):
-    install_built_host_files(build_dir, install_dir, host)
+def install_toolchain(build_dir, install_dir, host, strip):
+    install_built_host_files(build_dir, install_dir, host, strip)
     install_sanitizer_scripts(install_dir)
     install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
@@ -144,7 +148,7 @@ def install_toolchain(build_dir, install_dir, host):
     install_repo_prop(install_dir)
 
 
-def install_built_host_files(build_dir, install_dir, host):
+def install_built_host_files(build_dir, install_dir, host, strip):
     is_windows = host.startswith('windows')
     is_darwin = host.startswith('darwin-x86')
     bin_ext = '.exe' if is_windows else ''
@@ -188,7 +192,7 @@ def install_built_host_files(build_dir, install_dir, host):
         file_name = os.path.basename(built_file)
 
         # Only strip bin files (not libs) on darwin.
-        if not is_darwin or built_file.startswith('bin/'):
+        if strip and (not is_darwin or built_file.startswith('bin/')):
             subprocess.check_call(
                 ['strip', os.path.join(install_path, file_name)])
 
@@ -463,14 +467,23 @@ def parse_args():
         '--no-multi-stage', action='store_false', dest='multi_stage',
         help='Do not perform multi-stage build.')
 
-    parser.add_argument(
+    build_all_llvm_tools_group = parser.add_mutually_exclusive_group()
+    build_all_llvm_tools_group.add_argument(
         '--build-all-llvm-tools', action='store_true', default=True,
         help='Build all the LLVM tools/utilities.')
-
-    parser.add_argument(
+    build_all_llvm_tools_group.add_argument(
         '--no-build-all-llvm-tools', action='store_false',
         dest='build_all_llvm_tools',
-        help='Build all the LLVM tools/utilities.')
+        help='Do not build all the LLVM tools/utilities.')
+
+    build_debug_clang_group = parser.add_mutually_exclusive_group()
+    build_debug_clang_group.add_argument(
+        '--debug-clang', action='store_true', default=True,
+        help='Also generate a debug version of clang (enabled by default).')
+    build_debug_clang_group.add_argument(
+        '--no-debug-clang', action='store_false',
+        dest='debug_clang',
+        help='Skip generating a debug version of clang.')
 
     return parser.parse_args()
 
@@ -501,13 +514,30 @@ def main():
             if os.path.exists(install_host_dir):
                 shutil.rmtree(install_host_dir)
 
-            install_toolchain(stage_1_out_dir, install_dir, host)
+            install_toolchain(stage_1_out_dir, install_dir, host, True)
 
         stage_2_out_dir = build_path('stage2')
         build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir,
               prebuilts_version=package_name,
               build_all_llvm_tools=args.build_all_llvm_tools)
         final_out_dir = stage_2_out_dir
+
+        if args.debug_clang:
+            debug_clang_out_dir = build_path('debug')
+            build(out_dir=debug_clang_out_dir,
+                  prebuilts_path=stage_1_install_dir,
+                  prebuilts_version=package_name,
+                  build_all_llvm_tools=args.build_all_llvm_tools,
+                  debug_clang=args.debug_clang)
+            # Install the actual debug toolchain somewhere, so it is easier to use.
+            debug_package_name = 'clang-debug'
+            base_debug_install_dir = build_path('debug-install')
+            for host in hosts:
+                debug_install_host_dir = os.path.join(base_debug_install_dir, host)
+                debug_install_dir = os.path.join(debug_install_host_dir, debug_package_name)
+                if os.path.exists(debug_install_host_dir):
+                    shutil.rmtree(debug_install_host_dir)
+                install_toolchain(debug_clang_out_dir, debug_install_dir, host, False)
 
     dist_dir = ORIG_ENV.get('DIST_DIR', final_out_dir)
     for host in hosts:
