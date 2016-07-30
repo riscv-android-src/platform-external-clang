@@ -367,21 +367,22 @@ def install_sanitizers(build_dir, install_dir, host):
     if host == 'linux-x86':
         install_host_sanitizers(build_dir, host, lib_dst)
 
-    # Tuples of (product, arch, libdir)
+    # Tuples of (product, arch)
     product_to_arch = (
-        ('generic', 'arm', 'lib'),
-        ('generic_arm64', 'aarch64', 'lib64'),
-        ('generic_x86', 'i686', 'lib'),
-        ('generic_mips', 'mips', 'lib'),
-        #('generic_mips64', 'mips64', 'lib64'),
+        ('generic', 'arm'),
+        ('generic_arm64', 'aarch64'),
+        ('generic_x86', 'i686'),
+        ('generic_mips', 'mips'),
+        #('generic_mips64', 'mips64'),
     )
 
-    for product, arch, libdir in product_to_arch:
+    for product, arch in product_to_arch:
+        module = 'libclang_rt.asan-{}-android'.format(arch)
         product_dir = os.path.join(build_dir, 'target/product', product)
-        system_dir = os.path.join(product_dir, 'system')
-        system_lib_dir = os.path.join(system_dir, libdir)
-        lib_name = 'libclang_rt.asan-{}-android.so'.format(arch)
-        built_lib = os.path.join(system_lib_dir, lib_name)
+        lib_dir = os.path.join(product_dir, 'obj/SHARED_LIBRARIES',
+                               '{}_intermediates'.format(module))
+        lib_name = '{}.so'.format(module)
+        built_lib = os.path.join(lib_dir, 'PACKED', lib_name)
         install_file(built_lib, lib_dst)
 
 
