@@ -163,6 +163,7 @@ def install_built_host_files(build_dir, install_dir, host, strip):
     built_files = [
         'bin/clang' + bin_ext,
         'bin/clang++' + bin_ext,
+        'bin/clang-format' + bin_ext,
         'bin/clang-tidy' + bin_ext,
     ]
     if is_windows:
