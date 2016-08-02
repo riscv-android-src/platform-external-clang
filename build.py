@@ -137,6 +137,7 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
 
 def install_toolchain(build_dir, install_dir, host, strip):
     install_built_host_files(build_dir, install_dir, host, strip)
+    install_compiler_wrapper(install_dir, host)
     install_sanitizer_scripts(install_dir)
     install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
@@ -453,6 +454,31 @@ def install_repo_prop(install_dir):
                 'echo $REPO_PROJECT $(git rev-parse HEAD)',
             ]
             subprocess.check_call(cmd, stdout=prop_file)
+
+
+def install_compiler_wrapper(install_dir, host):
+    is_windows = host.startswith('windows')
+    bin_ext = '.exe' if is_windows else ''
+
+    built_files = [
+        'bin/clang' + bin_ext,
+        'bin/clang++' + bin_ext,
+    ]
+
+    if is_windows:
+      built_files.extend([
+            'bin/clang_32' + bin_ext,
+      ])
+
+    wrapper_dir = android_path('external/clang')
+    wrapper = os.path.join(wrapper_dir, 'compiler_wrapper')
+
+    install_path = os.path.join(install_dir, 'bin')
+    for f in built_files:
+      old_file = os.path.join(install_dir, f)
+      new_file = os.path.join(install_dir, f + ".real")
+      os.rename(old_file, new_file)
+      shutil.copy2(wrapper, old_file)
 
 
 def parse_args():
