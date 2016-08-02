@@ -123,6 +123,7 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
   lib/Sema \
   lib/Serialization \
   lib/StaticAnalyzer/Checkers \
+  lib/StaticAnalyzer/Checkers/MPI-Checker \
   lib/StaticAnalyzer/Core \
   lib/StaticAnalyzer/Frontend \
   lib/Tooling \
