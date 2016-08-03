@@ -4572,7 +4572,7 @@ ABIArgInfo AArch64ABIInfo::classifyArgumentType(QualType Ty) const {
   // Aggregates <= 16 bytes are passed directly in registers or on the stack.
   uint64_t Size = getContext().getTypeSize(Ty);
   if (Size <= 128) {
-    if (getContext().getLangOpts().Renderscript) {
+    if (getContext().getLangOpts().RenderScript) {
       return coerceToIntArray(Ty, getContext(), getVMContext());
     }
     unsigned Alignment = getContext().getTypeAlign(Ty);
@@ -4620,7 +4620,7 @@ ABIArgInfo AArch64ABIInfo::classifyReturnType(QualType RetTy) const {
   // Aggregates <= 16 bytes are returned directly in registers or on the stack.
   uint64_t Size = getContext().getTypeSize(RetTy);
   if (Size <= 128) {
-    if (getContext().getLangOpts().Renderscript) {
+    if (getContext().getLangOpts().RenderScript) {
       return coerceToIntArray(RetTy, getContext(), getVMContext());
     }
     unsigned Alignment = getContext().getTypeAlign(RetTy);
@@ -5300,7 +5300,7 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty,
                                    /*Realign=*/TyAlign > ABIAlign);
   }
 
-  if (getContext().getLangOpts().Renderscript) {
+  if (getContext().getLangOpts().RenderScript) {
     return coerceToIntArray(Ty, getContext(), getVMContext());
   }
 
@@ -5485,7 +5485,7 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy,
   // are returned indirectly.
   uint64_t Size = getContext().getTypeSize(RetTy);
   if (Size <= 32) {
-    if (getContext().getLangOpts().Renderscript) {
+    if (getContext().getLangOpts().RenderScript) {
       return coerceToIntArray(RetTy, getContext(), getVMContext());
     }
     if (getDataLayout().isBigEndian())

@@ -723,13 +723,6 @@ def OpenCLGenericAddressSpace : TypeAttr {
   let Documentation = [OpenCLAddressSpaceGenericDocs];
 }
 
-def Kernel : Attr {
-  let Spellings = [GNU<"kernel">];
-  let Args = [StringArgument<"KernelKind", 1>];
-  let Subjects = SubjectList<[Function]>;
-  let Documentation = [Undocumented];
-}
-
 def OpenCLNoSVM : Attr {
   let Spellings = [GNU<"nosvm">];
   let Subjects = SubjectList<[Var]>;

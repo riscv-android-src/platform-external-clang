@@ -1640,24 +1640,6 @@ static void handleTLSModelAttr(Sema &S, Decl *D,
                           Attr.getAttributeSpellingListIndex()));
 }
 
-static void handleKernelAttr(Sema &S, Decl *D, const AttributeList &Attr) {
-  if (!S.LangOpts.Renderscript) {
-    S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << Attr.getName();
-    return;
-  }
-
-  StringRef Kind;
-
-  if (Attr.getNumArgs() == 1 &&
-      !S.checkStringLiteralArgumentAttr(Attr, 0, Kind)) {
-    return;
-  }
-
-  D->addAttr(::new (S.Context)
-             KernelAttr(Attr.getRange(), S.Context, Kind,
-                        Attr.getAttributeSpellingListIndex()));
-}
-
 static void handleRestrictAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   QualType ResultType = getFunctionOrMethodResultType(D);
   if (ResultType->isAnyPointerType() || ResultType->isBlockPointerType()) {
@@ -5530,9 +5512,6 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case AttributeList::AT_CUDALaunchBounds:
     handleLaunchBoundsAttr(S, D, Attr);
-    break;
-  case AttributeList::AT_Kernel:
-    handleKernelAttr(S, D, Attr);
     break;
   case AttributeList::AT_Restrict:
     handleRestrictAttr(S, D, Attr);
