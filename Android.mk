@@ -15,6 +15,7 @@ endif
 
 .PHONY: clang-toolchain llvm-tools
 clang-toolchain: \
+    asan_test \
     clang \
     clang-check \
     clang-format \

@@ -364,6 +364,7 @@ def install_sanitizers(build_dir, install_dir, host):
     clang_lib = os.path.join(install_dir, 'lib64/clang', short_version())
     headers_dst = os.path.join(clang_lib, 'include/sanitizer')
     lib_dst = os.path.join(clang_lib, 'lib/linux')
+    test_install_dir = os.path.join(install_dir, 'test')
     install_directory(headers_src, headers_dst)
 
     if host == 'linux-x86':
@@ -386,6 +387,22 @@ def install_sanitizers(build_dir, install_dir, host):
         lib_name = '{}.so'.format(module)
         built_lib = os.path.join(lib_dir, 'PACKED', lib_name)
         install_file(built_lib, lib_dst)
+
+        # Also install the asan_test binaries. We need to do this because the
+        # platform sources for compiler-rt are potentially different from our
+        # toolchain sources. The only way to ensure that this test builds
+        # correctly is to make it a prebuilt based on our latest toolchain
+        # sources. Note that this is only created/compiled by the previous
+        # stage (usually stage1) compiler. We are not doing a subsequent
+        # compile with our stage2 binaries to construct any further
+        # device-targeted objects.
+        test_module = 'asan_test'
+        test_dir = os.path.join(product_dir, 'obj/EXECUTABLES',
+                                '{}_intermediates'.format(test_module))
+        built_test = os.path.join(test_dir, 'PACKED', test_module)
+        test_dst = os.path.join(install_dir, 'test', arch, 'bin')
+        os.makedirs(test_dst)
+        install_file(built_test, test_dst)
 
 
 def install_host_sanitizers(build_dir, host, lib_dst):
