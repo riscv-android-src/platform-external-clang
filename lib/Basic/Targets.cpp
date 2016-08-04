@@ -4989,8 +4989,6 @@ public:
       } else if (Feature == "+neon") {
         FPU |= NeonFPU;
         HW_FP |= HW_FP_SP | HW_FP_DP;
-      } else if (Feature == "+long64") {
-        LongWidth = LongAlign = 64;  // RenderScript uses a 64-bit long type
       } else if (Feature == "+hwdiv") {
         HWDiv |= HWDivThumb;
       } else if (Feature == "+hwdiv-arm") {
