@@ -4572,7 +4572,7 @@ ABIArgInfo AArch64ABIInfo::classifyArgumentType(QualType Ty) const {
   // Aggregates <= 16 bytes are passed directly in registers or on the stack.
   uint64_t Size = getContext().getTypeSize(Ty);
   if (Size <= 128) {
-    if (getContext().getLangOpts().Renderscript) {
+    if (getContext().getLangOpts().RenderScript) {
       return coerceToIntArray(Ty, getContext(), getVMContext());
     }
     unsigned Alignment = getContext().getTypeAlign(Ty);
@@ -4620,7 +4620,7 @@ ABIArgInfo AArch64ABIInfo::classifyReturnType(QualType RetTy) const {
   // Aggregates <= 16 bytes are returned directly in registers or on the stack.
   uint64_t Size = getContext().getTypeSize(RetTy);
   if (Size <= 128) {
-    if (getContext().getLangOpts().Renderscript) {
+    if (getContext().getLangOpts().RenderScript) {
       return coerceToIntArray(RetTy, getContext(), getVMContext());
     }
     unsigned Alignment = getContext().getTypeAlign(RetTy);
@@ -5300,7 +5300,7 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty,
                                    /*Realign=*/TyAlign > ABIAlign);
   }
 
-  if (getContext().getLangOpts().Renderscript) {
+  if (getContext().getLangOpts().RenderScript) {
     return coerceToIntArray(Ty, getContext(), getVMContext());
   }
 
@@ -5485,7 +5485,7 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy,
   // are returned indirectly.
   uint64_t Size = getContext().getTypeSize(RetTy);
   if (Size <= 32) {
-    if (getContext().getLangOpts().Renderscript) {
+    if (getContext().getLangOpts().RenderScript) {
       return coerceToIntArray(RetTy, getContext(), getVMContext());
     }
     if (getDataLayout().isBigEndian())
@@ -6881,6 +6881,49 @@ void AMDGPUTargetCodeGenInfo::setTargetAttributes(
 
 
 //===----------------------------------------------------------------------===//
+// SPARC v8 ABI Implementation.
+// Based on the SPARC Compliance Definition version 2.4.1.
+//
+// Ensures that complex values are passed in registers.
+//
+namespace {
+class SparcV8ABIInfo : public DefaultABIInfo {
+public:
+  SparcV8ABIInfo(CodeGenTypes &CGT) : DefaultABIInfo(CGT) {}
+
+private:
+  ABIArgInfo classifyReturnType(QualType RetTy) const;
+  void computeInfo(CGFunctionInfo &FI) const override;
+};
+} // end anonymous namespace
+
+
+ABIArgInfo
+SparcV8ABIInfo::classifyReturnType(QualType Ty) const {
+  if (Ty->isAnyComplexType()) {
+    return ABIArgInfo::getDirect();
+  }
+  else {
+    return DefaultABIInfo::classifyReturnType(Ty);
+  }
+}
+
+void SparcV8ABIInfo::computeInfo(CGFunctionInfo &FI) const {
+
+  FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+  for (auto &Arg : FI.arguments())
+    Arg.info = classifyArgumentType(Arg.type);
+}
+
+namespace {
+class SparcV8TargetCodeGenInfo : public TargetCodeGenInfo {
+public:
+  SparcV8TargetCodeGenInfo(CodeGenTypes &CGT)
+    : TargetCodeGenInfo(new SparcV8ABIInfo(CGT)) {}
+};
+} // end anonymous namespace
+
+//===----------------------------------------------------------------------===//
 // SPARC v9 ABI Implementation.
 // Based on the SPARC Compliance Definition version 2.4.1.
 //
@@ -8003,6 +8046,8 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     return SetCGInfo(new AMDGPUTargetCodeGenInfo(Types));
   case llvm::Triple::amdgcn:
     return SetCGInfo(new AMDGPUTargetCodeGenInfo(Types));
+  case llvm::Triple::sparc:
+    return SetCGInfo(new SparcV8TargetCodeGenInfo(Types));
   case llvm::Triple::sparcv9:
     return SetCGInfo(new SparcV9TargetCodeGenInfo(Types));
   case llvm::Triple::xcore:

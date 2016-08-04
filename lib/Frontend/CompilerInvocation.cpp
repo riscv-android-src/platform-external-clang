@@ -490,7 +490,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.LTOVisibilityPublicStd = Args.hasArg(OPT_flto_visibility_public_std);
   Opts.SplitDwarfFile = Args.getLastArgValue(OPT_split_dwarf_file);
   Opts.DebugTypeExtRefs = Args.hasArg(OPT_dwarf_ext_refs);
-  Opts.DebugExplicitImport = Triple.isPS4CPU(); 
+  Opts.DebugExplicitImport = Triple.isPS4CPU();
 
   for (const auto &Arg : Args.getAllArgValues(OPT_fdebug_prefix_map_EQ))
     Opts.DebugPrefixMap.insert(StringRef(Arg).split('='));
@@ -707,6 +707,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
       Args.hasArg(OPT_fsanitize_memory_use_after_dtor);
   Opts.SanitizeCfiCrossDso = Args.hasArg(OPT_fsanitize_cfi_cross_dso);
   Opts.SanitizeStats = Args.hasArg(OPT_fsanitize_stats);
+  Opts.SanitizeAddressUseAfterScope =
+      Args.hasArg(OPT_fsanitize_address_use_after_scope);
   Opts.SSPBufferSize =
       getLastArgIntValue(Args, OPT_stack_protector_buffer_size, 8, Diags);
   Opts.StackRealignment = Args.hasArg(OPT_mstackrealign);
@@ -1290,6 +1292,7 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       .Case("objective-c++-header", IK_ObjCXX)
       .Cases("ast", "pcm", IK_AST)
       .Case("ir", IK_LLVM_IR)
+      .Case("renderscript", IK_RenderScript)
       .Default(IK_None);
     if (DashX == IK_None)
       Diags.Report(diag::err_drv_invalid_value)
@@ -1447,8 +1450,16 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
     Opts.AddVFSOverlayFile(A->getValue());
 }
 
+bool isOpenCL(LangStandard::Kind LangStd) {
+  return LangStd == LangStandard::lang_opencl
+    || LangStd == LangStandard::lang_opencl11
+    || LangStd == LangStandard::lang_opencl12
+    || LangStd == LangStandard::lang_opencl20;
+}
+
 void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
                                          const llvm::Triple &T,
+                                         PreprocessorOptions &PPOpts,
                                          LangStandard::Kind LangStd) {
   // Set some properties which depend solely on the input kind; it would be nice
   // to move these to the language standard, and have the driver resolve the
@@ -1493,6 +1504,9 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
     case IK_PreprocessedObjCXX:
       LangStd = LangStandard::lang_gnucxx98;
       break;
+    case IK_RenderScript:
+      LangStd = LangStandard::lang_c99;
+      break;
     }
   }
 
@@ -1511,7 +1525,7 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
   Opts.ImplicitInt = Std.hasImplicitInt();
 
   // Set OpenCL Version.
-  Opts.OpenCL = LangStd == LangStandard::lang_opencl || IK == IK_OpenCL;
+  Opts.OpenCL = isOpenCL(LangStd) || IK == IK_OpenCL;
   if (LangStd == LangStandard::lang_opencl)
     Opts.OpenCLVersion = 100;
   else if (LangStd == LangStandard::lang_opencl11)
@@ -1530,10 +1544,20 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
     Opts.DefaultFPContract = 1;
     Opts.NativeHalfType = 1;
     Opts.NativeHalfArgsAndReturns = 1;
+    // Include default header file for OpenCL.
+    if (Opts.IncludeDefaultHeader) {
+      PPOpts.Includes.push_back("opencl-c.h");
+    }
   }
 
   Opts.CUDA = IK == IK_CUDA || IK == IK_PreprocessedCuda ||
               LangStd == LangStandard::lang_cuda;
+
+  Opts.RenderScript = IK == IK_RenderScript;
+  if (Opts.RenderScript) {
+    Opts.NativeHalfType = 1;
+    Opts.NativeHalfArgsAndReturns = 1;
+  }
 
   // OpenCL and C++ both have bool, true, false keywords.
   Opts.Bool = Opts.OpenCL || Opts.CPlusPlus;
@@ -1570,6 +1594,7 @@ static Visibility parseVisibility(Arg *arg, ArgList &args,
 
 static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
                           const TargetOptions &TargetOpts,
+                          PreprocessorOptions &PPOpts,
                           DiagnosticsEngine &Diags) {
   // FIXME: Cleanup per-file based stuff.
   LangStandard::Kind LangStd = LangStandard::lang_unspecified;
@@ -1577,6 +1602,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
     LangStd = llvm::StringSwitch<LangStandard::Kind>(A->getValue())
 #define LANGSTANDARD(id, name, desc, features) \
       .Case(name, LangStandard::lang_##id)
+#define LANGSTANDARD_ALIAS(id, alias) \
+      .Case(alias, LangStandard::lang_##id)
 #include "clang/Frontend/LangStandards.def"
       .Default(LangStandard::lang_unspecified);
     if (LangStd == LangStandard::lang_unspecified)
@@ -1604,8 +1631,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
             << A->getAsString(Args) << "C++/ObjC++";
         break;
       case IK_OpenCL:
-        Diags.Report(diag::err_drv_argument_not_allowed_with)
-          << A->getAsString(Args) << "OpenCL";
+        if (!isOpenCL(LangStd))
+          Diags.Report(diag::err_drv_argument_not_allowed_with)
+            << A->getAsString(Args) << "OpenCL";
         break;
       case IK_CUDA:
       case IK_PreprocessedCuda:
@@ -1624,10 +1652,10 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   if (const Arg *A = Args.getLastArg(OPT_cl_std_EQ)) {
     LangStandard::Kind OpenCLLangStd
     = llvm::StringSwitch<LangStandard::Kind>(A->getValue())
-    .Case("CL", LangStandard::lang_opencl)
-    .Case("CL1.1", LangStandard::lang_opencl11)
-    .Case("CL1.2", LangStandard::lang_opencl12)
-    .Case("CL2.0", LangStandard::lang_opencl20)
+    .Cases("cl", "CL", LangStandard::lang_opencl)
+    .Cases("cl1.1", "CL1.1", LangStandard::lang_opencl11)
+    .Cases("cl1.2", "CL1.2", LangStandard::lang_opencl12)
+    .Cases("cl2.0", "CL2.0", LangStandard::lang_opencl20)
     .Default(LangStandard::lang_unspecified);
 
     if (OpenCLLangStd == LangStandard::lang_unspecified) {
@@ -1638,8 +1666,10 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       LangStd = OpenCLLangStd;
   }
 
+  Opts.IncludeDefaultHeader = Args.hasArg(OPT_finclude_default_header);
+
   llvm::Triple T(TargetOpts.Triple);
-  CompilerInvocation::setLangDefaults(Opts, IK, T, LangStd);
+  CompilerInvocation::setLangDefaults(Opts, IK, T, PPOpts, LangStd);
 
   // We abuse '-f[no-]gnu-keywords' to force overriding all GNU-extension
   // keywords. This behavior is provided by GCC's poorly named '-fasm' flag,
@@ -1815,7 +1845,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.RTTI = Opts.CPlusPlus && !Args.hasArg(OPT_fno_rtti);
   Opts.RTTIData = Opts.RTTI && !Args.hasArg(OPT_fno_rtti_data);
-  Opts.Blocks = Args.hasArg(OPT_fblocks);
+  Opts.Blocks = Args.hasArg(OPT_fblocks) || (Opts.OpenCL
+    && Opts.OpenCLVersion >= 200);
   Opts.BlocksRuntimeOptional = Args.hasArg(OPT_fblocks_runtime_optional);
   Opts.Coroutines = Args.hasArg(OPT_fcoroutines);
   Opts.Modules = Args.hasArg(OPT_fmodules);
@@ -2308,7 +2339,8 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
                         Diags, LangOpts.Sanitize);
   } else {
     // Other LangOpts are only initialzed when the input is not AST or LLVM IR.
-    ParseLangArgs(LangOpts, Args, DashX, Res.getTargetOpts(), Diags);
+    ParseLangArgs(LangOpts, Args, DashX, Res.getTargetOpts(),
+      Res.getPreprocessorOpts(), Diags);
     if (Res.getFrontendOpts().ProgramAction == frontend::RewriteObjC)
       LangOpts.ObjCExceptions = 1;
   }

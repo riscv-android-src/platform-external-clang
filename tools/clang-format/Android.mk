@@ -37,6 +37,7 @@ LOCAL_STATIC_LIBRARIES := \
   libclangSema \
   libclangStaticAnalyzerFrontend \
   libclangStaticAnalyzerCheckers \
+  libclangStaticAnalyzerMPIChecker \
   libclangStaticAnalyzerCore \
   libclangAnalysis \
   libclangEdit \

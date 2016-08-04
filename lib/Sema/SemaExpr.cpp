@@ -4566,6 +4566,13 @@ ExprResult Sema::BuildCXXDefaultArgExpr(SourceLocation CallLoc,
     }
   }
 
+  // If the default argument expression is not set yet, we are building it now.
+  if (!Param->hasInit()) {
+    Diag(Param->getLocStart(), diag::err_recursive_default_argument) << FD;
+    Param->setInvalidDecl();
+    return ExprError();
+  }
+
   // If the default expression creates temporaries, we need to
   // push them to the current stack of expression temporaries so they'll
   // be properly destroyed.
@@ -12059,7 +12066,7 @@ ExprResult Sema::ActOnBlockStmtExpr(SourceLocation CaretLoc,
                                     Stmt *Body, Scope *CurScope) {
   // If blocks are disabled, emit an error.
   if (!LangOpts.Blocks)
-    Diag(CaretLoc, diag::err_blocks_disable);
+    Diag(CaretLoc, diag::err_blocks_disable) << LangOpts.OpenCL;
 
   // Leave the expression-evaluation context.
   if (hasAnyUnrecoverableErrorsInThisFunction())
@@ -13005,7 +13012,7 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func,
       if (MethodDecl->isDefaulted() && !MethodDecl->isDeleted()) {
         if (MethodDecl->isCopyAssignmentOperator())
           DefineImplicitCopyAssignment(Loc, MethodDecl);
-        else
+        else if (MethodDecl->isMoveAssignmentOperator())
           DefineImplicitMoveAssignment(Loc, MethodDecl);
       }
     } else if (isa<CXXConversionDecl>(MethodDecl) &&
@@ -14911,16 +14918,20 @@ ExprResult Sema::CheckPlaceholderExpr(Expr *E) {
   case BuiltinType::Overload: {
     // Try to resolve a single function template specialization.
     // This is obligatory.
-    ExprResult result = E;
-    if (ResolveAndFixSingleFunctionTemplateSpecialization(result, false)) {
-      return result;
+    ExprResult Result = E;
+    if (ResolveAndFixSingleFunctionTemplateSpecialization(Result, false))
+      return Result;
+
+    // No guarantees that ResolveAndFixSingleFunctionTemplateSpecialization
+    // leaves Result unchanged on failure.
+    Result = E;
+    if (resolveAndFixAddressOfOnlyViableOverloadCandidate(Result))
+      return Result;
 
     // If that failed, try to recover with a call.
-    } else {
-      tryToRecoverWithCall(result, PDiag(diag::err_ovl_unresolvable),
-                           /*complain*/ true);
-      return result;
-    }
+    tryToRecoverWithCall(Result, PDiag(diag::err_ovl_unresolvable),
+                         /*complain*/ true);
+    return Result;
   }
 
   // Bound member functions.

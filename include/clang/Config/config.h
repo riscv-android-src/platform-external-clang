@@ -43,4 +43,7 @@
 /* Linker version detected at compile time. */
 #define HOST_LINK_VERSION "2.24"
 
+/* enable x86 relax relocations by default */
+#define ENABLE_X86_RELAX_RELOCATIONS 0
+
 #endif
