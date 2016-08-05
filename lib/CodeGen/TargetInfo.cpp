@@ -31,16 +31,16 @@
 using namespace clang;
 using namespace CodeGen;
 
-// Helper for coercing an aggregate argument or return value into an
-// integer array of the same size (including padding).
+// Helper for coercing an aggregate argument or return value into an integer
+// array of the same size (including padding) and alignment.  This alternate
+// coercion happens only for the RenderScript ABI and can be removed after
+// runtimes that rely on it are no longer supported.
 //
-// This is needed for RenderScript on ARM targets. The RenderScript
-// compiler assumes that the size of the argument / return value in
-// the IR is the same as the size of the corresponding qualified
-// type. It is necessary to coerce the aggregate type into an
-// array. We cannot pass a struct directly as an argument because
-// clang's struct passing logic breaks up the struct into its
-// constitutent fields.
+// RenderScript assumes that the size of the argument / return value in the IR
+// is the same as the size of the corresponding qualified type. This helper
+// coerces the aggregate type into an array of the same size (including
+// padding).  This coercion is used in lieu of expansion of struct members or
+// other canonical coercions that return a coerced-type of larger size.
 //
 // Ty          - The argument / return value type
 // Context     - The associated ASTContext
@@ -297,7 +297,8 @@ static Address emitVoidPtrDirectVAArg(CodeGenFunction &CGF,
 
   // If the argument is smaller than a slot, and this is a big-endian
   // target, the argument will be right-adjusted in its slot.
-  if (DirectSize < SlotSize && CGF.CGM.getDataLayout().isBigEndian()) {
+  if (DirectSize < SlotSize && CGF.CGM.getDataLayout().isBigEndian() &&
+      !DirectTy->isStructTy()) {
     Addr = CGF.Builder.CreateConstInBoundsByteGEP(Addr, SlotSize - DirectSize);
   }
 
@@ -396,6 +397,9 @@ TargetCodeGenInfo::getDependentLibraryOption(llvm::StringRef Lib,
   Opt += Lib;
 }
 
+unsigned TargetCodeGenInfo::getOpenCLKernelCallingConv() const {
+  return llvm::CallingConv::C;
+}
 static bool isEmptyRecord(ASTContext &Context, QualType T, bool AllowArrays);
 
 /// isEmptyField - Return true iff a the field is "empty", that is it
@@ -4572,7 +4576,9 @@ ABIArgInfo AArch64ABIInfo::classifyArgumentType(QualType Ty) const {
   // Aggregates <= 16 bytes are passed directly in registers or on the stack.
   uint64_t Size = getContext().getTypeSize(Ty);
   if (Size <= 128) {
-    if (getContext().getLangOpts().RenderScript) {
+    // On RenderScript, coerce Aggregates <= 16 bytes to an integer array of
+    // same size and alignment.
+    if (getTarget().isRenderScriptTarget()) {
       return coerceToIntArray(Ty, getContext(), getVMContext());
     }
     unsigned Alignment = getContext().getTypeAlign(Ty);
@@ -4620,7 +4626,9 @@ ABIArgInfo AArch64ABIInfo::classifyReturnType(QualType RetTy) const {
   // Aggregates <= 16 bytes are returned directly in registers or on the stack.
   uint64_t Size = getContext().getTypeSize(RetTy);
   if (Size <= 128) {
-    if (getContext().getLangOpts().RenderScript) {
+    // On RenderScript, coerce Aggregates <= 16 bytes to an integer array of
+    // same size and alignment.
+    if (getTarget().isRenderScriptTarget()) {
       return coerceToIntArray(RetTy, getContext(), getVMContext());
     }
     unsigned Alignment = getContext().getTypeAlign(RetTy);
@@ -4993,6 +5001,8 @@ public:
     case llvm::Triple::EABIHF:
     case llvm::Triple::GNUEABI:
     case llvm::Triple::GNUEABIHF:
+    case llvm::Triple::MuslEABI:
+    case llvm::Triple::MuslEABIHF:
       return true;
     default:
       return false;
@@ -5003,6 +5013,7 @@ public:
     switch (getTarget().getTriple().getEnvironment()) {
     case llvm::Triple::EABIHF:
     case llvm::Triple::GNUEABIHF:
+    case llvm::Triple::MuslEABIHF:
       return true;
     default:
       return false;
@@ -5114,6 +5125,16 @@ public:
 
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &CGM) const override;
+
+  void getDependentLibraryOption(llvm::StringRef Lib,
+                                 llvm::SmallString<24> &Opt) const override {
+    Opt = "/DEFAULTLIB:" + qualifyWindowsLibrary(Lib);
+  }
+
+  void getDetectMismatchOption(llvm::StringRef Name, llvm::StringRef Value,
+                               llvm::SmallString<32> &Opt) const override {
+    Opt = "/FAILIFMISMATCH:\"" + Name.str() + "=" + Value.str() + "\"";
+  }
 };
 
 void WindowsARMTargetCodeGenInfo::setTargetAttributes(
@@ -5300,7 +5321,9 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty,
                                    /*Realign=*/TyAlign > ABIAlign);
   }
 
-  if (getContext().getLangOpts().RenderScript) {
+  // On RenderScript, coerce Aggregates <= 64 bytes to an integer array of
+  // same size and alignment.
+  if (getTarget().isRenderScriptTarget()) {
     return coerceToIntArray(Ty, getContext(), getVMContext());
   }
 
@@ -5485,7 +5508,9 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy,
   // are returned indirectly.
   uint64_t Size = getContext().getTypeSize(RetTy);
   if (Size <= 32) {
-    if (getContext().getLangOpts().RenderScript) {
+    // On RenderScript, coerce Aggregates <= 4 bytes to an integer array of
+    // same size and alignment.
+    if (getTarget().isRenderScriptTarget()) {
       return coerceToIntArray(RetTy, getContext(), getVMContext());
     }
     if (getDataLayout().isBigEndian())
@@ -6852,6 +6877,7 @@ public:
     : TargetCodeGenInfo(new DefaultABIInfo(CGT)) {}
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &M) const override;
+  unsigned getOpenCLKernelCallingConv() const override;
 };
 
 }
@@ -6879,6 +6905,10 @@ void AMDGPUTargetCodeGenInfo::setTargetAttributes(
   }
 }
 
+
+unsigned AMDGPUTargetCodeGenInfo::getOpenCLKernelCallingConv() const {
+  return llvm::CallingConv::AMDGPU_KERNEL;
+}
 
 //===----------------------------------------------------------------------===//
 // SPARC v8 ABI Implementation.
@@ -7509,9 +7539,8 @@ void XCoreTargetCodeGenInfo::emitTargetMD(const Decl *D, llvm::GlobalValue *GV,
   SmallStringEnc Enc;
   if (getTypeString(Enc, D, CGM, TSC)) {
     llvm::LLVMContext &Ctx = CGM.getModule().getContext();
-    llvm::SmallVector<llvm::Metadata *, 2> MDVals;
-    MDVals.push_back(llvm::ConstantAsMetadata::get(GV));
-    MDVals.push_back(llvm::MDString::get(Ctx, Enc.str()));
+    llvm::Metadata *MDVals[] = {llvm::ConstantAsMetadata::get(GV),
+                                llvm::MDString::get(Ctx, Enc.str())};
     llvm::NamedMDNode *MD =
       CGM.getModule().getOrInsertNamedMetadata("xcore.typestrings");
     MD->addOperand(llvm::MDNode::get(Ctx, MDVals));
@@ -7529,6 +7558,7 @@ public:
     : TargetCodeGenInfo(new DefaultABIInfo(CGT)) {}
   void emitTargetMD(const Decl *D, llvm::GlobalValue *GV,
                     CodeGen::CodeGenModule &M) const override;
+  unsigned getOpenCLKernelCallingConv() const override;
 };
 } // End anonymous namespace.
 
@@ -7556,6 +7586,10 @@ void SPIRTargetCodeGenInfo::emitTargetMD(const Decl *D, llvm::GlobalValue *GV,
   llvm::NamedMDNode *OCLVerMD =
       M.getOrInsertNamedMetadata("opencl.ocl.version");
   OCLVerMD->addOperand(llvm::MDNode::get(Ctx, OCLVerElts));
+}
+
+unsigned SPIRTargetCodeGenInfo::getOpenCLKernelCallingConv() const {
+  return llvm::CallingConv::SPIR_KERNEL;
 }
 
 static bool appendType(SmallStringEnc &Enc, QualType QType,
@@ -7960,6 +7994,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     else if (CodeGenOpts.FloatABI == "hard" ||
              (CodeGenOpts.FloatABI != "soft" &&
               (Triple.getEnvironment() == llvm::Triple::GNUEABIHF ||
+               Triple.getEnvironment() == llvm::Triple::MuslEABIHF ||
                Triple.getEnvironment() == llvm::Triple::EABIHF)))
       Kind = ARMABIInfo::AAPCS_VFP;
 

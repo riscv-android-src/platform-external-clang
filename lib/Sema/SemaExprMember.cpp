@@ -142,6 +142,7 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
     AbstractInstanceResult = IMA_Abstract;
     break;
 
+  case Sema::DiscardedStatement:
   case Sema::ConstantEvaluated:
   case Sema::PotentiallyEvaluated:
   case Sema::PotentiallyEvaluatedIfUsed:
@@ -323,12 +324,23 @@ CheckExtVectorComponent(Sema &S, QualType baseType, ExprValueKind &VK,
              (Idx = vecType->getPointAccessorIdx(*compStr)) != -1) {
     bool HasRGBA = IsRGBA(*compStr);
     do {
+      // Ensure that xyzw and rgba components don't intermingle.
       if (HasRGBA != IsRGBA(*compStr))
         break;
       if (HasIndex[Idx]) HasRepeated = true;
       HasIndex[Idx] = true;
       compStr++;
     } while (*compStr && (Idx = vecType->getPointAccessorIdx(*compStr)) != -1);
+
+    // Emit a warning if an rgba selector is used earlier than OpenCL 2.2
+    if (HasRGBA || (*compStr && IsRGBA(*compStr))) {
+      if (S.getLangOpts().OpenCL && S.getLangOpts().OpenCLVersion < 220) {
+        const char *DiagBegin = HasRGBA ? CompName->getNameStart() : compStr;
+        S.Diag(OpLoc, diag::ext_opencl_ext_vector_type_rgba_selector)
+          << StringRef(DiagBegin, 1)
+          << S.getLangOpts().OpenCLVersion << SourceRange(CompLoc);
+      }
+    }
   } else {
     if (HexSwizzle) compStr++;
     while ((Idx = vecType->getNumericAccessorIdx(*compStr)) != -1) {
@@ -355,7 +367,7 @@ CheckExtVectorComponent(Sema &S, QualType baseType, ExprValueKind &VK,
       compStr++;
 
     while (*compStr) {
-      if (!vecType->isAccessorWithinNumElements(*compStr++)) {
+      if (!vecType->isAccessorWithinNumElements(*compStr++, HexSwizzle)) {
         S.Diag(OpLoc, diag::err_ext_vector_component_exceeds_length)
           << baseType << SourceRange(CompLoc);
         return QualType();
