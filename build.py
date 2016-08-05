@@ -64,7 +64,8 @@ def install_directory(src, dst):
 
 
 def build(out_dir, prebuilts_path=None, prebuilts_version=None,
-          build_all_llvm_tools=None, debug_clang=None):
+          build_all_llvm_tools=None, debug_clang=None,
+          max_jobs=multiprocessing.cpu_count()):
     products = (
         'aosp_arm',
         'aosp_arm64',
@@ -75,11 +76,11 @@ def build(out_dir, prebuilts_path=None, prebuilts_version=None,
     )
     for product in products:
         build_product(out_dir, product, prebuilts_path, prebuilts_version,
-                      build_all_llvm_tools, debug_clang)
+                      build_all_llvm_tools, debug_clang, max_jobs)
 
 
 def build_product(out_dir, product, prebuilts_path, prebuilts_version,
-                  build_all_llvm_tools, debug_clang):
+                  build_all_llvm_tools, debug_clang, max_jobs):
     env = dict(ORIG_ENV)
     env['DISABLE_LLVM_DEVICE_BUILDS'] = 'true'
     env['DISABLE_RELOCATION_PACKER'] = 'true'
@@ -101,7 +102,8 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
     if prebuilts_version is not None:
         overrides.append('LLVM_PREBUILTS_VERSION={}'.format(prebuilts_version))
 
-    jobs_arg = '-j{}'.format(multiprocessing.cpu_count())
+    # Use at least 1 and at most all available CPUs (sanitize the user input).
+    jobs_arg = '-j{}'.format(max(1, min(max_jobs, multiprocessing.cpu_count())))
     targets = ['clang-toolchain']
     if build_all_llvm_tools:
         targets += ['llvm-tools']
@@ -501,6 +503,10 @@ def install_compiler_wrapper(install_dir, host):
 def parse_args():
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('-j', action='store', dest='jobs', type=int,
+                        default=multiprocessing.cpu_count(),
+                        help='Specify number of executed jobs')
+
     parser.add_argument(
         '--build-name', default='dev', help='Release name for the package.')
 
@@ -545,7 +551,7 @@ def main():
         raise RuntimeError('Unsupported host: {}'.format(sys.platform))
 
     stage_1_out_dir = build_path('stage1')
-    build(out_dir=stage_1_out_dir)
+    build(out_dir=stage_1_out_dir, max_jobs=args.jobs)
     final_out_dir = stage_1_out_dir
     if args.multi_stage:
         stage_1_install_dir = build_path('stage1-install')
@@ -564,7 +570,8 @@ def main():
         stage_2_out_dir = build_path('stage2')
         build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir,
               prebuilts_version=package_name,
-              build_all_llvm_tools=args.build_all_llvm_tools)
+              build_all_llvm_tools=args.build_all_llvm_tools,
+              max_jobs=args.jobs)
         final_out_dir = stage_2_out_dir
 
         if args.debug_clang:
@@ -573,7 +580,8 @@ def main():
                   prebuilts_path=stage_1_install_dir,
                   prebuilts_version=package_name,
                   build_all_llvm_tools=args.build_all_llvm_tools,
-                  debug_clang=args.debug_clang)
+                  debug_clang=args.debug_clang,
+                  max_jobs=args.jobs)
             # Install the actual debug toolchain somewhere, so it is easier to use.
             debug_package_name = 'clang-debug'
             base_debug_install_dir = build_path('debug-install')
