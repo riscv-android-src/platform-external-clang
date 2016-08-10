@@ -14,21 +14,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from __future__ import print_function
-
+"""Builds the Android Clang toolchain."""
 import argparse
 import glob
+import logging
 import multiprocessing
 import os
-import shutil
-import subprocess
+import pprint
 import sys
 
 import version
 
 
+# Disable all the "too many/few methods/parameters" warnings and the like.
+# pylint: disable=design
+
+# Disable lint warnings for todo comments and the like.
+# pylint: disable=fixme
+
+# TODO: Add docstrings?
+# pylint: disable=missing-docstring
+
+
 THIS_DIR = os.path.realpath(os.path.dirname(__file__))
 ORIG_ENV = dict(os.environ)
+
+
+class Config(object):
+    """Container for global configuration options."""
+
+    # Set True to skip all actions (log only). Controlled by --dry-run.
+    dry_run = False
+
+
+def logger():
+    """Returns the default logger for the module."""
+    return logging.getLogger(__name__)
 
 
 def android_path(*args):
@@ -53,14 +74,66 @@ def long_version():
     return '.'.join([version.major, version.minor, version.patch])
 
 
+def check_call(cmd, *args, **kwargs):
+    """Proxy for subprocess.check_call with logging and dry-run support."""
+    import subprocess
+    logger().info('check_call: %s', ' '.join(cmd))
+    if 'env' in kwargs:
+        # Rather than dump the whole environment to the terminal every time,
+        # just print the difference between this call and our environment.
+        # Note that this will not include environment that was *removed* from
+        # os.environ.
+        extra_env = dict(set(kwargs['env'].items()) - set(os.environ.items()))
+        if len(extra_env) > 0:
+            logger().info('check_call additional env:\n%s',
+                          pprint.pformat(extra_env))
+    if not Config.dry_run:
+        subprocess.check_call(cmd, *args, **kwargs)
+
+
 def install_file(src, dst):
-    print('Copying ' + src)
-    shutil.copy2(src, dst)
+    """Proxy for shutil.copy2 with logging and dry-run support."""
+    import shutil
+    logger().info('copy %s %s', src, dst)
+    if not Config.dry_run:
+        shutil.copy2(src, dst)
 
 
 def install_directory(src, dst):
-    print('Copying ' + src)
-    shutil.copytree(src, dst)
+    """Proxy for shutil.copytree with logging and dry-run support."""
+    import shutil
+    logger().info('copytree %s %s', src, dst)
+    if not Config.dry_run:
+        shutil.copytree(src, dst)
+
+
+def rmtree(path):
+    """Proxy for shutil.rmtree with logging and dry-run support."""
+    import shutil
+    logger().info('rmtree %s', path)
+    if not Config.dry_run:
+        shutil.rmtree(path)
+
+
+def rename(src, dst):
+    """Proxy for os.rename with logging and dry-run support."""
+    logger().info('rename %s %s', src, dst)
+    if not Config.dry_run:
+        os.rename(src, dst)
+
+
+def makedirs(path):
+    """Proxy for os.makedirs with logging and dry-run support."""
+    logger().info('makedirs %s', path)
+    if not Config.dry_run:
+        os.makedirs(path)
+
+
+def symlink(src, dst):
+    """Proxy for os.symlink with logging and dry-run support."""
+    logger().info('symlink %s %s', src, dst)
+    if not Config.dry_run:
+        os.symlink(src, dst)
 
 
 def build(out_dir, prebuilts_path=None, prebuilts_version=None,
@@ -70,7 +143,7 @@ def build(out_dir, prebuilts_path=None, prebuilts_version=None,
         'aosp_arm',
         'aosp_arm64',
         'aosp_mips',
-        #'aosp_mips64',
+        # 'aosp_mips64',
         'aosp_x86',
         'aosp_x86_64',
     )
@@ -103,12 +176,13 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
         overrides.append('LLVM_PREBUILTS_VERSION={}'.format(prebuilts_version))
 
     # Use at least 1 and at most all available CPUs (sanitize the user input).
-    jobs_arg = '-j{}'.format(max(1, min(max_jobs, multiprocessing.cpu_count())))
+    jobs_arg = '-j{}'.format(
+        max(1, min(max_jobs, multiprocessing.cpu_count())))
     targets = ['clang-toolchain']
     if build_all_llvm_tools:
         targets += ['llvm-tools']
-    subprocess.check_call(
-        ['make', jobs_arg] + overrides + targets, cwd=android_path(), env=env)
+    check_call(['make', jobs_arg] + overrides + targets,
+               cwd=android_path(), env=env)
 
 
 def package_toolchain(build_dir, build_name, host, dist_dir):
@@ -119,7 +193,7 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
     # Remove any previously installed toolchain so it doesn't pollute the
     # build.
     if os.path.exists(install_host_dir):
-        shutil.rmtree(install_host_dir)
+        rmtree(install_host_dir)
 
     install_toolchain(build_dir, install_dir, host, True)
 
@@ -130,11 +204,11 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
 
     tarball_name = package_name + '-' + host
     package_path = os.path.join(dist_dir, tarball_name) + '.tar.bz2'
-    print('Packaging ' + package_path)
+    logger().info('Packaging %s', package_path)
     args = [
         'tar', '-cjC', install_host_dir, '-f', package_path, package_name
     ]
-    subprocess.check_call(args)
+    check_call(args)
 
 
 def install_toolchain(build_dir, install_dir, host, strip):
@@ -188,7 +262,7 @@ def install_built_host_files(build_dir, install_dir, host, strip):
         dirname = os.path.dirname(built_file)
         install_path = os.path.join(install_dir, dirname)
         if not os.path.exists(install_path):
-            os.makedirs(install_path)
+            makedirs(install_path)
 
         built_path = os.path.join(build_dir, 'host', host, built_file)
         install_file(built_path, install_path)
@@ -197,14 +271,13 @@ def install_built_host_files(build_dir, install_dir, host, strip):
 
         # Only strip bin files (not libs) on darwin.
         if strip and (not is_darwin or built_file.startswith('bin/')):
-            subprocess.check_call(
-                ['strip', os.path.join(install_path, file_name)])
+            check_call(['strip', os.path.join(install_path, file_name)])
 
 
 def install_sanitizer_scripts(install_dir):
     script_path = android_path(
         'external/compiler-rt/lib/asan/scripts/asan_device_setup')
-    shutil.copy2(script_path, os.path.join(install_dir, 'bin'))
+    install_file(script_path, os.path.join(install_dir, 'bin'))
 
 
 def install_analyzer_scripts(install_dir):
@@ -225,23 +298,23 @@ def install_analyzer_scripts(install_dir):
         ('armeabi-v7a', 'armv7-none-linux-androideabi'),
         ('armeabi-v7a-hard', 'armv7-none-linux-androideabi'),
         ('mips', 'mipsel-none-linux-android'),
-        #('mips64', 'mips64el-none-linux-android'),
+        # ('mips64', 'mips64el-none-linux-android'),
         ('x86', 'i686-none-linux-android'),
         ('x86_64', 'x86_64-none-linux-android'),
     )
 
     for arch, target in arch_target_pairs:
         arch_path = os.path.join(install_dir, 'bin', arch)
-        os.makedirs(arch_path)
+        makedirs(arch_path)
 
         analyzer_file_path = os.path.join(arch_path, 'analyzer')
-        print('Creating ' + analyzer_file_path)
+        logger().info('Creating %s', analyzer_file_path)
         with open(analyzer_file_path, 'w') as analyzer_file:
             analyzer_file.write(
                 analyzer_text.format(clang_suffix='', target=target))
 
         analyzerpp_file_path = os.path.join(arch_path, 'analyzer++')
-        print('Creating ' + analyzerpp_file_path)
+        logger().info('Creating %s', analyzerpp_file_path)
         with open(analyzerpp_file_path, 'w') as analyzerpp_file:
             analyzerpp_file.write(
                 analyzer_text.format(clang_suffix='++', target=target))
@@ -249,7 +322,7 @@ def install_analyzer_scripts(install_dir):
 
 def install_scan_scripts(install_dir):
     tools_install_dir = os.path.join(install_dir, 'tools')
-    os.makedirs(tools_install_dir)
+    makedirs(tools_install_dir)
     tools = ('scan-build', 'scan-view')
     tools_dir = android_path('external/clang/tools')
     for tool in tools:
@@ -270,7 +343,7 @@ def install_headers(build_dir, install_dir, host):
     headers_src = android_path('external/clang/lib/Headers')
     headers_dst = os.path.join(
         install_dir, 'lib64/clang', short_version(), 'include')
-    os.makedirs(headers_dst)
+    makedirs(headers_dst)
     for header in os.listdir(headers_src):
         if not should_copy(header):
             continue
@@ -285,14 +358,14 @@ def install_headers(build_dir, install_dir, host):
         'libclangBasic_intermediates/include/clang/Basic/arm_neon.h')
     install_file(arm_neon_h, headers_dst)
 
-    os.symlink(short_version(),
-               os.path.join(install_dir, 'lib64/clang', long_version()))
+    symlink(short_version(),
+            os.path.join(install_dir, 'lib64/clang', long_version()))
 
 
 def install_profile_rt(build_dir, install_dir, host):
     lib_dir = os.path.join(
         install_dir, 'lib64/clang', short_version(), 'lib/linux')
-    os.makedirs(lib_dir)
+    makedirs(lib_dir)
 
     install_target_profile_rt(build_dir, lib_dir)
 
@@ -306,7 +379,7 @@ def install_target_profile_rt(build_dir, lib_dir):
         'generic': 'arm',
         'generic_arm64': 'aarch64',
         'generic_mips': 'mipsel',
-        #'generic_mips64': 'mips64el',
+        # 'generic_mips64': 'mips64el',
         'generic_x86': 'i686',
         'generic_x86_64': 'x86_64',
     }
@@ -343,7 +416,7 @@ def install_libomp(build_dir, install_dir, host):
     lib_dir = os.path.join(
         install_dir, 'lib64/clang', short_version(), 'lib/linux')
     if not os.path.isdir(lib_dir):
-        os.makedirs(lib_dir)
+        makedirs(lib_dir)
 
     product_to_arch = {
         'generic': 'arm',
@@ -356,8 +429,9 @@ def install_libomp(build_dir, install_dir, host):
         module = 'libomp-' + arch
         product_dir = os.path.join(build_dir, 'target/product', product)
         shared_libs = os.path.join(product_dir, 'obj/SHARED_LIBRARIES')
-        built_lib = os.path.join(shared_libs,
-                                 '{}_intermediates/PACKED/{}.so'.format(module, module))
+        built_lib = os.path.join(
+            shared_libs,
+            '{}_intermediates/PACKED/{}.so'.format(module, module))
         install_file(built_lib, os.path.join(lib_dir, module + '.so'))
 
 
@@ -366,7 +440,6 @@ def install_sanitizers(build_dir, install_dir, host):
     clang_lib = os.path.join(install_dir, 'lib64/clang', short_version())
     headers_dst = os.path.join(clang_lib, 'include/sanitizer')
     lib_dst = os.path.join(clang_lib, 'lib/linux')
-    test_install_dir = os.path.join(install_dir, 'test')
     install_directory(headers_src, headers_dst)
 
     if host == 'linux-x86':
@@ -378,7 +451,7 @@ def install_sanitizers(build_dir, install_dir, host):
         ('generic_arm64', 'aarch64'),
         ('generic_x86', 'i686'),
         ('generic_mips', 'mips'),
-        #('generic_mips64', 'mips64'),
+        # ('generic_mips64', 'mips64'),
     )
 
     for product, arch in product_to_arch:
@@ -403,7 +476,7 @@ def install_sanitizers(build_dir, install_dir, host):
                                 '{}_intermediates'.format(test_module))
         built_test = os.path.join(test_dir, 'PACKED', test_module)
         test_dst = os.path.join(install_dir, 'test', arch, 'bin')
-        os.makedirs(test_dst)
+        makedirs(test_dst)
         install_file(built_test, test_dst)
 
 
@@ -464,7 +537,7 @@ def install_repo_prop(install_dir):
     dist_dir = os.environ.get('DIST_DIR')
     if dist_dir is not None:
         dist_repo_prop = os.path.join(dist_dir, file_name)
-        shutil.copy(dist_repo_prop, install_dir)
+        install_file(dist_repo_prop, install_dir)
     else:
         out_file = os.path.join(install_dir, file_name)
         with open(out_file, 'w') as prop_file:
@@ -472,7 +545,7 @@ def install_repo_prop(install_dir):
                 'repo', 'forall', '-c',
                 'echo $REPO_PROJECT $(git rev-parse HEAD)',
             ]
-            subprocess.check_call(cmd, stdout=prop_file)
+            check_call(cmd, stdout=prop_file)
 
 
 def install_compiler_wrapper(install_dir, host):
@@ -485,19 +558,18 @@ def install_compiler_wrapper(install_dir, host):
     ]
 
     if is_windows:
-      built_files.extend([
+        built_files.extend([
             'bin/clang_32' + bin_ext,
-      ])
+        ])
 
     wrapper_dir = android_path('external/clang')
     wrapper = os.path.join(wrapper_dir, 'compiler_wrapper')
 
-    install_path = os.path.join(install_dir, 'bin')
-    for f in built_files:
-      old_file = os.path.join(install_dir, f)
-      new_file = os.path.join(install_dir, f + ".real")
-      os.rename(old_file, new_file)
-      shutil.copy2(wrapper, old_file)
+    for built_file in built_files:
+        old_file = os.path.join(install_dir, built_file)
+        new_file = os.path.join(install_dir, built_file + ".real")
+        rename(old_file, new_file)
+        install_file(wrapper, old_file)
 
 
 def parse_args():
@@ -509,6 +581,12 @@ def parse_args():
 
     parser.add_argument(
         '--build-name', default='dev', help='Release name for the package.')
+    parser.add_argument(
+        '--dry-run', action='store_true', default=False,
+        help='Skip running commands; just print.')
+    parser.add_argument(
+        '-v', '--verbose', action='store_true', default=False,
+        help='Print debug output.')
 
     multi_stage_group = parser.add_mutually_exclusive_group()
     multi_stage_group.add_argument(
@@ -541,9 +619,15 @@ def parse_args():
 
 def main():
     args = parse_args()
+    log_level = logging.INFO
+    if args.verbose:
+        log_level = logging.DEBUG
+    logging.basicConfig(level=log_level)
+
+    Config.dry_run = args.dry_run
 
     if sys.platform.startswith('linux'):
-        #hosts = ['linux-x86', 'windows-x86']
+        # hosts = ['linux-x86', 'windows-x86']
         hosts = ['linux-x86']
     elif sys.platform == 'darwin':
         hosts = ['darwin-x86']
@@ -563,7 +647,7 @@ def main():
             # Remove any previously installed toolchain so it doesn't pollute
             # the build.
             if os.path.exists(install_host_dir):
-                shutil.rmtree(install_host_dir)
+                rmtree(install_host_dir)
 
             install_toolchain(stage_1_out_dir, install_dir, host, True)
 
@@ -582,15 +666,19 @@ def main():
                   build_all_llvm_tools=args.build_all_llvm_tools,
                   debug_clang=args.debug_clang,
                   max_jobs=args.jobs)
-            # Install the actual debug toolchain somewhere, so it is easier to use.
+            # Install the actual debug toolchain somewhere, so it is easier to
+            # use.
             debug_package_name = 'clang-debug'
             base_debug_install_dir = build_path('debug-install')
             for host in hosts:
-                debug_install_host_dir = os.path.join(base_debug_install_dir, host)
-                debug_install_dir = os.path.join(debug_install_host_dir, debug_package_name)
+                debug_install_host_dir = os.path.join(
+                    base_debug_install_dir, host)
+                debug_install_dir = os.path.join(
+                    debug_install_host_dir, debug_package_name)
                 if os.path.exists(debug_install_host_dir):
-                    shutil.rmtree(debug_install_host_dir)
-                install_toolchain(debug_clang_out_dir, debug_install_dir, host, False)
+                    rmtree(debug_install_host_dir)
+                install_toolchain(
+                    debug_clang_out_dir, debug_install_dir, host, False)
 
     dist_dir = ORIG_ENV.get('DIST_DIR', final_out_dir)
     for host in hosts:
