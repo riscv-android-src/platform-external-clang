@@ -60,9 +60,7 @@ def build_path(*args):
     # Our multistage build directories will be placed under OUT_DIR if it is in
     # the environment. By default they will be placed under
     # $ANDROID_BUILD_TOP/out.
-    top_out = ORIG_ENV.get('OUT_DIR', android_path('out'))
-    if not os.path.isabs(top_out):
-        top_out = os.path.realpath(top_out)
+    top_out = ORIG_ENV.get('OUT_DIR', 'out')
     return os.path.join(top_out, *args)
 
 
@@ -623,6 +621,9 @@ def main():
     if args.verbose:
         log_level = logging.DEBUG
     logging.basicConfig(level=log_level)
+
+    logger().info('chdir %s', android_path())
+    os.chdir(android_path())
 
     Config.dry_run = args.dry_run
 
