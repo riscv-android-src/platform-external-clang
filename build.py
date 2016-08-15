@@ -452,14 +452,17 @@ def install_sanitizers(build_dir, install_dir, host):
         # ('generic_mips64', 'mips64'),
     )
 
+    sanitizers = ('asan', 'ubsan_standalone')
+
     for product, arch in product_to_arch:
-        module = 'libclang_rt.asan-{}-android'.format(arch)
-        product_dir = os.path.join(build_dir, 'target/product', product)
-        lib_dir = os.path.join(product_dir, 'obj/SHARED_LIBRARIES',
-                               '{}_intermediates'.format(module))
-        lib_name = '{}.so'.format(module)
-        built_lib = os.path.join(lib_dir, 'PACKED', lib_name)
-        install_file(built_lib, lib_dst)
+        for sanitizer in sanitizers:
+            module = 'libclang_rt.{}-{}-android'.format(sanitizer, arch)
+            product_dir = os.path.join(build_dir, 'target/product', product)
+            lib_dir = os.path.join(product_dir, 'obj/SHARED_LIBRARIES',
+                                   '{}_intermediates'.format(module))
+            lib_name = '{}.so'.format(module)
+            built_lib = os.path.join(lib_dir, 'PACKED', lib_name)
+            install_file(built_lib, lib_dst)
 
         # Also install the asan_test binaries. We need to do this because the
         # platform sources for compiler-rt are potentially different from our
