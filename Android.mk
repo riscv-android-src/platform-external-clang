@@ -98,7 +98,8 @@ endif # ifneq ($(HOST_OS),darwin)
 
 ifneq (,$(filter arm arm64 x86 mips mips64,$(TARGET_ARCH)))
 clang-toolchain: \
-    $(ADDRESS_SANITIZER_RUNTIME_LIBRARY)
+    $(ADDRESS_SANITIZER_RUNTIME_LIBRARY) \
+    $(UBSAN_RUNTIME_LIBRARY)
 
 endif
 
