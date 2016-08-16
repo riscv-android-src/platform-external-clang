@@ -24,6 +24,7 @@ clang-toolchain: \
     llvm-as \
     llvm-dis \
     llvm-link \
+    llvm-symbolizer \
     LLVMgold \
     libprofile_rt
 
