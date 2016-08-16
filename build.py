@@ -251,6 +251,7 @@ def install_built_host_files(build_dir, install_dir, host, strip):
             'bin/llvm-as' + bin_ext,
             'bin/llvm-dis' + bin_ext,
             'bin/llvm-link' + bin_ext,
+            'bin/llvm-symbolizer' + bin_ext,
             'lib64/libc++' + lib_ext,
             'lib64/libLLVM' + lib_ext,
             'lib64/LLVMgold' + lib_ext,
