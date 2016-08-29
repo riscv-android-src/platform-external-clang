@@ -673,8 +673,7 @@ def main():
     Config.dry_run = args.dry_run
 
     if sys.platform.startswith('linux'):
-        # hosts = ['linux-x86', 'windows-x86']
-        hosts = ['linux-x86']
+        hosts = ['linux-x86', 'windows-x86']
     elif sys.platform == 'darwin':
         hosts = ['darwin-x86']
     else:
