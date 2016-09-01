@@ -13,10 +13,13 @@ ifneq "$(words $(FORCE_BUILD_LLVM_DEBUG))$(words $(filter-out true false,$(FORCE
   $(error FORCE_BUILD_LLVM_DEBUG may only be true, false, or unset)
 endif
 
-.PHONY: clang-toolchain llvm-tools
-clang-toolchain: \
+.PHONY: clang-toolchain-minimal clang-toolchain-full llvm-tools
+clang-toolchain-minimal: \
+    clang
+
+clang-toolchain-full: \
+    clang-toolchain-minimal \
     asan_test \
-    clang \
     clang-check \
     clang-format \
     clang-tidy \
@@ -72,7 +75,7 @@ llvm-tools: \
     yaml-bench
 
 ifneq ($(HOST_OS),darwin)
-clang-toolchain: \
+clang-toolchain-minimal: \
     libasan \
     libasan_32 \
     libasan_cxx \
@@ -90,15 +93,15 @@ clang-toolchain: \
 
 # Build libomp on Linux host.  Build modules for the host and some specific
 # targets.
-clang-toolchain: libomp
+clang-toolchain-full: libomp
 ifneq (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
-clang-toolchain: libomp-$(TARGET_ARCH)
+clang-toolchain-full: libomp-$(TARGET_ARCH)
 endif # ifneq  (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
 
 endif # ifneq ($(HOST_OS),darwin)
 
 ifneq (,$(filter arm arm64 x86 mips mips64,$(TARGET_ARCH)))
-clang-toolchain: \
+clang-toolchain-minimal: \
     $(ADDRESS_SANITIZER_RUNTIME_LIBRARY) \
     $(UBSAN_RUNTIME_LIBRARY)
 
