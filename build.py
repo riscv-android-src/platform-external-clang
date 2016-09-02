@@ -684,8 +684,10 @@ def main():
 
     # For a multi-stage build, build a minimum clang for the first stage that is
     # just enough to build the second stage.
+    is_stage1_final = not args.multi_stage
     build(out_dir=stage_1_out_dir,
-          build_all_clang_tools=(not args.multi_stage),
+          build_all_clang_tools=is_stage1_final,
+          build_all_llvm_tools=(is_stage1_final and args.build_all_llvm_tools),
           max_jobs=args.jobs)
     final_out_dir = stage_1_out_dir
     if args.multi_stage:
