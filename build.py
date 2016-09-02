@@ -135,8 +135,8 @@ def symlink(src, dst):
 
 
 def build(out_dir, prebuilts_path=None, prebuilts_version=None,
-          build_all_llvm_tools=None, debug_clang=None,
-          max_jobs=multiprocessing.cpu_count()):
+          build_all_clang_tools=None, build_all_llvm_tools=None,
+          debug_clang=None, max_jobs=multiprocessing.cpu_count()):
     products = (
         'aosp_arm',
         'aosp_arm64',
@@ -147,11 +147,13 @@ def build(out_dir, prebuilts_path=None, prebuilts_version=None,
     )
     for product in products:
         build_product(out_dir, product, prebuilts_path, prebuilts_version,
-                      build_all_llvm_tools, debug_clang, max_jobs)
+                      build_all_clang_tools, build_all_llvm_tools, debug_clang,
+                      max_jobs)
 
 
 def build_product(out_dir, product, prebuilts_path, prebuilts_version,
-                  build_all_llvm_tools, debug_clang, max_jobs):
+                  build_all_clang_tools, build_all_llvm_tools, debug_clang,
+                  max_jobs):
     env = dict(ORIG_ENV)
     env['DISABLE_LLVM_DEVICE_BUILDS'] = 'true'
     env['DISABLE_RELOCATION_PACKER'] = 'true'
@@ -176,7 +178,10 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
     # Use at least 1 and at most all available CPUs (sanitize the user input).
     jobs_arg = '-j{}'.format(
         max(1, min(max_jobs, multiprocessing.cpu_count())))
-    targets = ['clang-toolchain']
+
+    targets = ['clang-toolchain-minimal']
+    if build_all_clang_tools:
+        targets += ['clang-toolchain-full']
     if build_all_llvm_tools:
         targets += ['llvm-tools']
     check_call(['make', jobs_arg] + overrides + targets,
@@ -209,6 +214,12 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
     check_call(args)
 
 
+def install_minimal_toolchain(build_dir, install_dir, host, strip):
+    install_built_host_files(build_dir, install_dir, host, strip, minimal=True)
+    install_headers(build_dir, install_dir, host)
+    install_sanitizers(build_dir, install_dir, host)
+
+
 def install_toolchain(build_dir, install_dir, host, strip):
     install_built_host_files(build_dir, install_dir, host, strip)
     install_compiler_wrapper(install_dir, host)
@@ -218,12 +229,13 @@ def install_toolchain(build_dir, install_dir, host, strip):
     install_headers(build_dir, install_dir, host)
     install_profile_rt(build_dir, install_dir, host)
     install_sanitizers(build_dir, install_dir, host)
+    install_sanitizer_tests(build_dir, install_dir, host)
     install_libomp(build_dir, install_dir, host)
     install_license_files(install_dir)
     install_repo_prop(install_dir)
 
 
-def install_built_host_files(build_dir, install_dir, host, strip):
+def get_built_host_files(host, minimal):
     is_windows = host.startswith('windows')
     is_darwin = host.startswith('darwin-x86')
     bin_ext = '.exe' if is_windows else ''
@@ -238,9 +250,18 @@ def install_built_host_files(build_dir, install_dir, host, strip):
     built_files = [
         'bin/clang' + bin_ext,
         'bin/clang++' + bin_ext,
+    ]
+    if not is_windows:
+        built_files.extend(['lib64/libc++' + lib_ext])
+
+    if minimal:
+        return built_files
+
+    built_files.extend([
         'bin/clang-format' + bin_ext,
         'bin/clang-tidy' + bin_ext,
-    ]
+    ])
+
     if is_windows:
         built_files.extend([
             'bin/clang_32' + bin_ext,
@@ -252,11 +273,14 @@ def install_built_host_files(build_dir, install_dir, host, strip):
             'bin/llvm-dis' + bin_ext,
             'bin/llvm-link' + bin_ext,
             'bin/llvm-symbolizer' + bin_ext,
-            'lib64/libc++' + lib_ext,
             'lib64/libLLVM' + lib_ext,
             'lib64/LLVMgold' + lib_ext,
         ])
+    return built_files
 
+
+def install_built_host_files(build_dir, install_dir, host, strip, minimal=None):
+    built_files = get_built_host_files(host, minimal)
     for built_file in built_files:
         dirname = os.path.dirname(built_file)
         install_path = os.path.join(install_dir, dirname)
@@ -269,6 +293,7 @@ def install_built_host_files(build_dir, install_dir, host, strip):
         file_name = os.path.basename(built_file)
 
         # Only strip bin files (not libs) on darwin.
+        is_darwin = host.startswith('darwin-x86')
         if strip and (not is_darwin or built_file.startswith('bin/')):
             check_call(['strip', os.path.join(install_path, file_name)])
 
@@ -441,6 +466,9 @@ def install_sanitizers(build_dir, install_dir, host):
     lib_dst = os.path.join(clang_lib, 'lib/linux')
     install_directory(headers_src, headers_dst)
 
+    if not os.path.exists(lib_dst):
+        makedirs(lib_dst)
+
     if host == 'linux-x86':
         install_host_sanitizers(build_dir, host, lib_dst)
 
@@ -465,14 +493,27 @@ def install_sanitizers(build_dir, install_dir, host):
             built_lib = os.path.join(lib_dir, 'PACKED', lib_name)
             install_file(built_lib, lib_dst)
 
-        # Also install the asan_test binaries. We need to do this because the
-        # platform sources for compiler-rt are potentially different from our
-        # toolchain sources. The only way to ensure that this test builds
-        # correctly is to make it a prebuilt based on our latest toolchain
-        # sources. Note that this is only created/compiled by the previous
-        # stage (usually stage1) compiler. We are not doing a subsequent
-        # compile with our stage2 binaries to construct any further
-        # device-targeted objects.
+
+# Also install the asan_test binaries. We need to do this because the
+# platform sources for compiler-rt are potentially different from our
+# toolchain sources. The only way to ensure that this test builds
+# correctly is to make it a prebuilt based on our latest toolchain
+# sources. Note that this is only created/compiled by the previous
+# stage (usually stage1) compiler. We are not doing a subsequent
+# compile with our stage2 binaries to construct any further
+# device-targeted objects.
+def install_sanitizer_tests(build_dir, install_dir, host):
+    # Tuples of (product, arch)
+    product_to_arch = (
+        ('generic', 'arm'),
+        ('generic_arm64', 'aarch64'),
+        ('generic_x86', 'i686'),
+        ('generic_mips', 'mips'),
+        # ('generic_mips64', 'mips64'),
+    )
+
+    for product, arch in product_to_arch:
+        product_dir = os.path.join(build_dir, 'target/product', product)
         test_module = 'asan_test'
         test_dir = os.path.join(product_dir, 'obj/EXECUTABLES',
                                 '{}_intermediates'.format(test_module))
@@ -640,7 +681,12 @@ def main():
         raise RuntimeError('Unsupported host: {}'.format(sys.platform))
 
     stage_1_out_dir = build_path('stage1')
-    build(out_dir=stage_1_out_dir, max_jobs=args.jobs)
+
+    # For a multi-stage build, build a minimum clang for the first stage that is
+    # just enough to build the second stage.
+    build(out_dir=stage_1_out_dir,
+          build_all_clang_tools=(not args.multi_stage),
+          max_jobs=args.jobs)
     final_out_dir = stage_1_out_dir
     if args.multi_stage:
         stage_1_install_dir = build_path('stage1-install')
@@ -654,11 +700,12 @@ def main():
             if os.path.exists(install_host_dir):
                 rmtree(install_host_dir)
 
-            install_toolchain(stage_1_out_dir, install_dir, host, True)
+            install_minimal_toolchain(stage_1_out_dir, install_dir, host, True)
 
         stage_2_out_dir = build_path('stage2')
         build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir,
               prebuilts_version=package_name,
+              build_all_clang_tools=True,
               build_all_llvm_tools=args.build_all_llvm_tools,
               max_jobs=args.jobs)
         final_out_dir = stage_2_out_dir
