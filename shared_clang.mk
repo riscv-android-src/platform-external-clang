@@ -21,7 +21,8 @@ clang_whole_static_libraries := \
 	libclangRewriteFrontend \
 	libclangSema \
 	libclangSerialization \
-	libclangTooling
+	libclangTooling \
+	libclangToolingCore
 
 # host
 include $(CLEAR_VARS)
