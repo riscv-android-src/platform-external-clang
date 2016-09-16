@@ -88,8 +88,9 @@ clang-toolchain-minimal: \
     libubsan_standalone_cxx \
     libubsan_standalone_cxx_32
 
-#    host_cross_clang \
-#    host_cross_clang_64 \
+clang-toolchain-full: \
+    host_cross_clang \
+    host_cross_clang_64 \
 
 # Build libomp on Linux host.  Build modules for the host and some specific
 # targets.

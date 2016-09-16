@@ -105,7 +105,7 @@ clang_check_STATIC_LIBRARIES := \
 LOCAL_STATIC_LIBRARIES := $(clang_check_STATIC_LIBRARIES) $(clang_check_STATIC_LIBRARIES)
 
 LOCAL_LDLIBS += -lm
-LOCAL_LDLIBS_windows := -limagehlp
+LOCAL_LDLIBS_windows := -limagehlp -lversion
 LOCAL_LDLIBS_darwin := -lpthread -ldl
 LOCAL_LDLIBS_linux := -lpthread -ldl
 
