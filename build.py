@@ -650,7 +650,7 @@ def parse_args():
 
     build_debug_clang_group = parser.add_mutually_exclusive_group()
     build_debug_clang_group.add_argument(
-        '--debug-clang', action='store_true', default=False,
+        '--debug-clang', action='store_true', default=True,
         help='Also generate a debug version of clang (enabled by default).')
     build_debug_clang_group.add_argument(
         '--no-debug-clang', action='store_false',
@@ -716,6 +716,7 @@ def main():
             build(out_dir=debug_clang_out_dir,
                   prebuilts_path=stage_1_install_dir,
                   prebuilts_version=package_name,
+                  build_all_clang_tools=True,
                   build_all_llvm_tools=args.build_all_llvm_tools,
                   debug_clang=args.debug_clang,
                   max_jobs=args.jobs)
