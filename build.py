@@ -176,6 +176,11 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
     if prebuilts_version is not None:
         overrides.append('LLVM_PREBUILTS_VERSION={}'.format(prebuilts_version))
 
+    # Schedule at most 4 jobs on Darwin to avoid Mac flakiness.
+    # Bug: http://b/30416731
+    if sys.platform == 'darwin':
+        max_jobs = min(max_jobs, 4)
+
     # Use at least 1 and at most all available CPUs (sanitize the user input).
     jobs_arg = '-j{}'.format(
         max(1, min(max_jobs, multiprocessing.cpu_count())))
