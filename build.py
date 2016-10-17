@@ -223,7 +223,14 @@ def install_minimal_toolchain(build_dir, install_dir, host, strip):
 
 def install_toolchain(build_dir, install_dir, host, strip):
     install_built_host_files(build_dir, install_dir, host, strip)
-    install_compiler_wrapper(install_dir, host)
+
+    # File extensions matter on Windows. We can't invoke clang.exe if clang.exe
+    # is a Python file, and all of the build systems invoke clang.exe directly,
+    # so installing it as clang.py won't do much good either. Just skip the
+    # wrappers for now since we're not using them in the NDK yet anyway.
+    if not host.startswith('windows'):
+        install_compiler_wrapper(install_dir, host)
+
     install_sanitizer_scripts(install_dir)
     install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
