@@ -224,6 +224,13 @@ def install_minimal_toolchain(build_dir, install_dir, host, strip):
 def install_toolchain(build_dir, install_dir, host, strip):
     install_built_host_files(build_dir, install_dir, host, strip)
 
+    # We need to package libwinpthread-1.dll for Windows. This is explicitly
+    # linked whenever pthreads is used, and the build system doesn't allow us
+    # to link just that library statically (ldflags are stripped out of ldlibs
+    # and vice-versa).
+    if host.startswith('windows'):
+        install_winpthreads(install_dir)
+
     # File extensions matter on Windows. We can't invoke clang.exe if clang.exe
     # is a Python file, and all of the build systems invoke clang.exe directly,
     # so installing it as clang.py won't do much good either. Just skip the
@@ -304,6 +311,22 @@ def install_built_host_files(build_dir, install_dir, host, strip, minimal=None):
         is_darwin = host.startswith('darwin-x86')
         if strip and (not is_darwin or built_file.startswith('bin/')):
             check_call(['strip', os.path.join(install_path, file_name)])
+
+
+def install_winpthreads(install_dir):
+    """Installs the winpthreads runtime to the Windows bin directory."""
+    lib_name = 'libwinpthread-1.dll'
+    mingw_dir = android_path(
+        'prebuilts/gcc/linux-x86/host/x86_64-w64-mingw32-4.8')
+    lib_path = os.path.join(mingw_dir, 'x86_64-w64-mingw32/bin', lib_name)
+    lib32_path = os.path.join(mingw_dir, 'x86_64-w64-mingw32/lib32', lib_name)
+
+    lib_install = os.path.join(install_dir, 'bin', lib_name)
+    # The 32-bit library will be renamed appropriately by the NDK build process
+    # for 32-bit Windows.
+    lib32_install = os.path.join(install_dir, 'bin', lib_name + '.32')
+    install_file(lib_path, lib_install)
+    install_file(lib32_path, lib32_install)
 
 
 def install_sanitizer_scripts(install_dir):
