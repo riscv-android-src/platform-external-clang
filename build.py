@@ -288,6 +288,8 @@ def get_built_host_files(host, minimal):
             'bin/llvm-dis' + bin_ext,
             'bin/llvm-link' + bin_ext,
             'bin/llvm-symbolizer' + bin_ext,
+            'bin/sancov' + bin_ext,
+            'bin/sanstats' + bin_ext,
             'lib64/libLLVM' + lib_ext,
             'lib64/LLVMgold' + lib_ext,
         ])
