@@ -641,12 +641,15 @@ def install_compiler_wrapper(install_dir, host):
 
     wrapper_dir = android_path('external/clang')
     wrapper = os.path.join(wrapper_dir, 'compiler_wrapper')
+    bisect = os.path.join(wrapper_dir, 'bisect_driver.py')
 
     for built_file in built_files:
         old_file = os.path.join(install_dir, built_file)
         new_file = os.path.join(install_dir, built_file + ".real")
         rename(old_file, new_file)
         install_file(wrapper, old_file)
+
+    install_file(bisect, os.path.join(install_dir, 'bin/bisect_driver.py'))
 
 
 def parse_args():
