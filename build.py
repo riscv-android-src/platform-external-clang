@@ -735,7 +735,8 @@ def main():
             if os.path.exists(install_host_dir):
                 rmtree(install_host_dir)
 
-            install_minimal_toolchain(stage_1_out_dir, install_dir, host, True)
+            if not host.startswith('windows'):
+                install_minimal_toolchain(stage_1_out_dir, install_dir, host, True)
 
         stage_2_out_dir = build_path('stage2')
         build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir,

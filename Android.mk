@@ -3,7 +3,7 @@ CLANG_ROOT_PATH := $(LOCAL_PATH)
 
 .PHONY: clang-toolchain-minimal clang-toolchain-full llvm-tools
 clang-toolchain-minimal: \
-    clang
+    clang-host
 
 clang-toolchain-full: \
     clang-toolchain-minimal \
@@ -77,8 +77,7 @@ clang-toolchain-minimal: \
     libubsan_standalone_cxx_32
 
 clang-toolchain-full: \
-    host_cross_clang \
-    host_cross_clang_64 \
+    clang-host-cross
 
 # Build libomp on Linux host.  Build modules for the host and some specific
 # targets.
