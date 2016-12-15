@@ -11,7 +11,6 @@
 #include "clang/Basic/FileManager.h"
 #include "clang/Frontend/SerializedDiagnostics.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/MemoryBuffer.h"
 
 using namespace clang;
 using namespace clang::serialized_diags;
@@ -25,10 +24,7 @@ std::error_code SerializedDiagnosticReader::readDiagnostics(StringRef File) {
   if (!Buffer)
     return SDError::CouldNotLoad;
 
-  llvm::BitstreamReader StreamFile;
-  StreamFile.init((const unsigned char *)(*Buffer)->getBufferStart(),
-                  (const unsigned char *)(*Buffer)->getBufferEnd());
-
+  llvm::BitstreamReader StreamFile(**Buffer);
   llvm::BitstreamCursor Stream(StreamFile);
 
   // Sniff for the signature.
@@ -251,7 +247,7 @@ SerializedDiagnosticReader::readDiagnosticBlock(llvm::BitstreamCursor &Stream) {
 
 namespace {
 class SDErrorCategoryType final : public std::error_category {
-  const char *name() const LLVM_NOEXCEPT override {
+  const char *name() const noexcept override {
     return "clang.serialized_diags";
   }
   std::string message(int IE) const override {
