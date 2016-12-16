@@ -1,6 +1,5 @@
 cc_library_static {
-    name: "libclangASTMatchers",
+    name: "libclangDynamicASTMatchers",
     defaults: ["clang-defaults"],
     srcs: ["*.cpp"],
 }
-subdirs = ["Dynamic"]
