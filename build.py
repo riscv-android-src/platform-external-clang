@@ -137,7 +137,8 @@ def symlink(src, dst):
 
 def build(out_dir, prebuilts_path=None, prebuilts_version=None,
           build_all_clang_tools=None, build_all_llvm_tools=None,
-          debug_clang=None, max_jobs=multiprocessing.cpu_count()):
+          debug_clang=None, max_jobs=multiprocessing.cpu_count(),
+          use_updated_version=False):
     products = (
         'aosp_arm',
         'aosp_arm64',
@@ -149,12 +150,12 @@ def build(out_dir, prebuilts_path=None, prebuilts_version=None,
     for product in products:
         build_product(out_dir, product, prebuilts_path, prebuilts_version,
                       build_all_clang_tools, build_all_llvm_tools, debug_clang,
-                      max_jobs)
+                      max_jobs, use_updated_version)
 
 
 def build_product(out_dir, product, prebuilts_path, prebuilts_version,
                   build_all_clang_tools, build_all_llvm_tools, debug_clang,
-                  max_jobs):
+                  max_jobs, use_updated_version):
     env = dict(ORIG_ENV)
     env['DISABLE_LLVM_DEVICE_BUILDS'] = 'true'
     env['DISABLE_RELOCATION_PACKER'] = 'true'
@@ -175,6 +176,8 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
         overrides.append('LLVM_PREBUILTS_BASE={}'.format(prebuilts_path))
     if prebuilts_version is not None:
         overrides.append('LLVM_PREBUILTS_VERSION={}'.format(prebuilts_version))
+    if use_updated_version:
+        overrides.append('LLVM_RELEASE_VERSION={}'.format(short_version()))
 
     # Use at least 1 and at most all available CPUs (sanitize the user input).
     jobs_arg = '-j{}'.format(
@@ -406,7 +409,11 @@ def install_headers(build_dir, install_dir, host):
     for header in os.listdir(headers_src):
         if not should_copy(header):
             continue
-        install_file(os.path.join(headers_src, header), headers_dst)
+        src_path = os.path.join(headers_src, header)
+        if os.path.isdir(src_path):
+            install_directory(src_path, os.path.join(headers_dst, header))
+        else:
+            install_file(src_path, headers_dst)
 
     install_file(android_path('bionic/libc/include/stdatomic.h'), headers_dst)
 
@@ -721,7 +728,7 @@ def main():
     build(out_dir=stage_1_out_dir,
           build_all_clang_tools=is_stage1_final,
           build_all_llvm_tools=(is_stage1_final and args.build_all_llvm_tools),
-          max_jobs=args.jobs)
+          max_jobs=args.jobs, use_updated_version=False)
     final_out_dir = stage_1_out_dir
     if args.multi_stage:
         stage_1_install_dir = build_path('stage1-install')
@@ -743,7 +750,7 @@ def main():
               prebuilts_version=package_name,
               build_all_clang_tools=True,
               build_all_llvm_tools=args.build_all_llvm_tools,
-              max_jobs=args.jobs)
+              max_jobs=args.jobs, use_updated_version=True)
         final_out_dir = stage_2_out_dir
 
         if args.debug_clang:
@@ -754,7 +761,7 @@ def main():
                   build_all_clang_tools=True,
                   build_all_llvm_tools=args.build_all_llvm_tools,
                   debug_clang=args.debug_clang,
-                  max_jobs=args.jobs)
+                  max_jobs=args.jobs, use_updated_version=True)
             # Install the actual debug toolchain somewhere, so it is easier to
             # use.
             debug_package_name = 'clang-debug'
