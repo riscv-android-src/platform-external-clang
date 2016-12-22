@@ -5,7 +5,7 @@ clang_binary_host {
     defaults: ["clang-defaults"],
     srcs: ["*.cpp"],
 
-    static_libs: [
+    whole_static_libs: [
         "libclangFrontendTool",
         "libclangFrontend",
         "libclangARCMigrate",
@@ -86,6 +86,7 @@ clang_binary_host {
         windows: {
             host_ldlibs: [
                 "-limagehlp",
+                "-lole32",
                 "-lversion",
             ],
         },
@@ -95,6 +96,7 @@ clang_binary_host {
                 "-lpthread",
                 "-ldl",
             ],
+            ldflags: ["-Wl,-export_dynamic"],
         },
         linux: {
             host_ldlibs: [
@@ -102,6 +104,7 @@ clang_binary_host {
                 "-lpthread",
                 "-ldl",
             ],
+            ldflags: ["-Wl,--export-dynamic"],
         },
     },
 
