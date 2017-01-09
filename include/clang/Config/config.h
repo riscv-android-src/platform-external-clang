@@ -14,6 +14,9 @@
 /* Default C++ stdlib to use. */
 #define CLANG_DEFAULT_CXX_STDLIB ""
 
+/* Default runtime library to use (\"libgcc\" or \"compiler-rt\", empty for platform default) */
+#define CLANG_DEFAULT_RTLIB ""
+
 /* Default OpenMP runtime used by -fopenmp. */
 #define CLANG_DEFAULT_OPENMP_RUNTIME "libomp"
 
@@ -35,7 +38,7 @@
 /* Define if we have libxml2 */
 /* #undef CLANG_HAVE_LIBXML */
 
-#define PACKAGE_STRING "LLVM 3.8.275480"
+#define PACKAGE_STRING "LLVM 4.0.285906"
 
 /* The LLVM product name and version */
 #define BACKEND_PACKAGE_STRING PACKAGE_STRING

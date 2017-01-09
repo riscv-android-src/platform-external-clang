@@ -71,7 +71,7 @@ namespace {
     Stmt *CurrentBody;
     ParentMap *PropParentMap; // created lazily.
     std::string InFileName;
-    raw_ostream* OutFile;
+    std::unique_ptr<raw_ostream> OutFile;
     std::string Preamble;
     
     TypeDecl *ProtocolTypeDecl;
@@ -190,7 +190,7 @@ namespace {
 
     void HandleTopLevelSingleDecl(Decl *D);
     void HandleDeclInMainFile(Decl *D);
-    RewriteObjC(std::string inFile, raw_ostream *OS,
+    RewriteObjC(std::string inFile, std::unique_ptr<raw_ostream> OS,
                 DiagnosticsEngine &D, const LangOptions &LOpts,
                 bool silenceMacroWarn);
 
@@ -506,11 +506,10 @@ namespace {
   
   class RewriteObjCFragileABI : public RewriteObjC {
   public:
-    RewriteObjCFragileABI(std::string inFile, raw_ostream *OS,
-                DiagnosticsEngine &D, const LangOptions &LOpts,
-                bool silenceMacroWarn) : RewriteObjC(inFile, OS,
-                                                     D, LOpts,
-                                                     silenceMacroWarn) {}
+    RewriteObjCFragileABI(std::string inFile, std::unique_ptr<raw_ostream> OS,
+                          DiagnosticsEngine &D, const LangOptions &LOpts,
+                          bool silenceMacroWarn)
+        : RewriteObjC(inFile, std::move(OS), D, LOpts, silenceMacroWarn) {}
 
     ~RewriteObjCFragileABI() override {}
     void Initialize(ASTContext &context) override;
@@ -575,11 +574,11 @@ static bool IsHeaderFile(const std::string &Filename) {
   return Ext == "h" || Ext == "hh" || Ext == "H";
 }
 
-RewriteObjC::RewriteObjC(std::string inFile, raw_ostream* OS,
+RewriteObjC::RewriteObjC(std::string inFile, std::unique_ptr<raw_ostream> OS,
                          DiagnosticsEngine &D, const LangOptions &LOpts,
                          bool silenceMacroWarn)
-      : Diags(D), LangOpts(LOpts), InFileName(inFile), OutFile(OS),
-        SilenceRewriteMacroWarning(silenceMacroWarn) {
+    : Diags(D), LangOpts(LOpts), InFileName(inFile), OutFile(std::move(OS)),
+      SilenceRewriteMacroWarning(silenceMacroWarn) {
   IsHeader = IsHeaderFile(inFile);
   RewriteFailedDiag = Diags.getCustomDiagID(DiagnosticsEngine::Warning,
                "rewriting sub-expression within a macro (may not be correct)");
@@ -590,11 +589,12 @@ RewriteObjC::RewriteObjC(std::string inFile, raw_ostream* OS,
 }
 
 std::unique_ptr<ASTConsumer>
-clang::CreateObjCRewriter(const std::string &InFile, raw_ostream *OS,
+clang::CreateObjCRewriter(const std::string &InFile,
+                          std::unique_ptr<raw_ostream> OS,
                           DiagnosticsEngine &Diags, const LangOptions &LOpts,
                           bool SilenceRewriteMacroWarning) {
-  return llvm::make_unique<RewriteObjCFragileABI>(InFile, OS, Diags, LOpts,
-                                                  SilenceRewriteMacroWarning);
+  return llvm::make_unique<RewriteObjCFragileABI>(
+      InFile, std::move(OS), Diags, LOpts, SilenceRewriteMacroWarning);
 }
 
 void RewriteObjC::InitializeCommon(ASTContext &context) {
@@ -4426,11 +4426,9 @@ Stmt *RewriteObjC::SynthBlockInitExpr(BlockExpr *Exp,
   // Initialize the block descriptor.
   std::string DescData = "__" + FuncName + "_block_desc_" + BlockNumber + "_DATA";
 
-  VarDecl *NewVD = VarDecl::Create(*Context, TUDecl,
-                                   SourceLocation(), SourceLocation(),
-                                   &Context->Idents.get(DescData.c_str()),
-                                   Context->VoidPtrTy, nullptr,
-                                   SC_Static);
+  VarDecl *NewVD = VarDecl::Create(
+      *Context, TUDecl, SourceLocation(), SourceLocation(),
+      &Context->Idents.get(DescData), Context->VoidPtrTy, nullptr, SC_Static);
   UnaryOperator *DescRefExpr =
     new (Context) UnaryOperator(new (Context) DeclRefExpr(NewVD, false,
                                                           Context->VoidPtrTy,
@@ -5650,14 +5648,12 @@ void RewriteObjCFragileABI::RewriteObjCCategoryImplDecl(ObjCCategoryImplDecl *ID
       InstanceMethods.push_back(Setter);
   }
   RewriteObjCMethodsMetaData(InstanceMethods.begin(), InstanceMethods.end(),
-                             true, "CATEGORY_", FullCategoryName.c_str(),
-                             Result);
-  
+                             true, "CATEGORY_", FullCategoryName, Result);
+
   // Build _objc_method_list for class's class methods if needed
   RewriteObjCMethodsMetaData(IDecl->classmeth_begin(), IDecl->classmeth_end(),
-                             false, "CATEGORY_", FullCategoryName.c_str(),
-                             Result);
-  
+                             false, "CATEGORY_", FullCategoryName, Result);
+
   // Protocols referenced in class declaration?
   // Null CDecl is case of a category implementation with no category interface
   if (CDecl)
@@ -5776,7 +5772,7 @@ void RewriteObjCFragileABI::RewriteObjCMethodsMetaData(MethodIterator MethodBegi
   Result += "{\n\t0, " + utostr(NumMethods) + "\n";
   
   Result += "\t,{{(SEL)\"";
-  Result += (*MethodBegin)->getSelector().getAsString().c_str();
+  Result += (*MethodBegin)->getSelector().getAsString();
   std::string MethodTypeString;
   Context->getObjCEncodingForMethodDecl(*MethodBegin, MethodTypeString);
   Result += "\", \"";
@@ -5786,7 +5782,7 @@ void RewriteObjCFragileABI::RewriteObjCMethodsMetaData(MethodIterator MethodBegi
   Result += "}\n";
   for (++MethodBegin; MethodBegin != MethodEnd; ++MethodBegin) {
     Result += "\t  ,{(SEL)\"";
-    Result += (*MethodBegin)->getSelector().getAsString().c_str();
+    Result += (*MethodBegin)->getSelector().getAsString();
     std::string MethodTypeString;
     Context->getObjCEncodingForMethodDecl(*MethodBegin, MethodTypeString);
     Result += "\", \"";
