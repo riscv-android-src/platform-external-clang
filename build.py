@@ -556,7 +556,7 @@ def install_sanitizer_tests(build_dir, install_dir, host):
     for product, arch in product_to_arch:
         product_dir = os.path.join(build_dir, 'target/product', product)
         test_module = 'asan_test'
-        test_dir = os.path.join(product_dir, 'obj/EXECUTABLES',
+        test_dir = os.path.join(product_dir, 'obj/NATIVE_TESTS',
                                 '{}_intermediates'.format(test_module))
         built_test = os.path.join(test_dir, 'PACKED', test_module)
         test_dst = os.path.join(install_dir, 'test', arch, 'bin')
