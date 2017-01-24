@@ -287,6 +287,7 @@ def get_built_host_files(host, minimal):
     else:
         built_files.extend([
             'bin/FileCheck' + bin_ext,
+            'bin/llvm-ar' + bin_ext,
             'bin/llvm-as' + bin_ext,
             'bin/llvm-dis' + bin_ext,
             'bin/llvm-link' + bin_ext,

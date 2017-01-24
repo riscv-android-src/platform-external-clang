@@ -12,6 +12,7 @@ clang-toolchain-full: \
     clang-format \
     clang-tidy \
     FileCheck \
+    llvm-ar \
     llvm-as \
     llvm-dis \
     llvm-link \
