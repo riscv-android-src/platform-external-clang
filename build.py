@@ -164,6 +164,7 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
     env['OUT_DIR'] = out_dir
     env['SKIP_LLVM_TESTS'] = 'true'
     env['SOONG_ALLOW_MISSING_DEPENDENCIES'] = 'true'
+    env['DISABLE_HOST_PIE'] = 'true' # b/34722791
     env['TARGET_BUILD_VARIANT'] = 'userdebug'
     env['TARGET_PRODUCT'] = product
 
