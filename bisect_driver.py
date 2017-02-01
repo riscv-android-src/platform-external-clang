@@ -240,7 +240,10 @@ def restore_file(bisect_dir, cache, abs_file_path):
   if os.path.exists(cached_path):
     if os.path.exists(abs_file_path):
       os.remove(abs_file_path)
-    os.link(cached_path, abs_file_path)
+    try:
+      os.link(cached_path, abs_file_path)
+    except OSError:
+      shutil.copyfile(cached_path, abs_file_path)
   else:
     raise Error(('%s is missing from %s cache! Unsure how to proceed. Make '
                  'will now crash.' % (cache, cached_path)))
