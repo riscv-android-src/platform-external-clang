@@ -4,9 +4,15 @@ import os
 import shlex
 import sys
 
-import bisect_driver
-
 BISECT_STAGE = os.environ.get('BISECT_STAGE')
+
+# We do not need bisect functionality with Goma and clang.
+# Goma server does not have bisect_driver, so we only import
+# bisect_driver when needed. See http://b/34862041
+# We should be careful when doing imports because of Goma.
+if BISECT_STAGE:
+  import bisect_driver
+
 DEFAULT_BISECT_DIR = os.path.expanduser('~/ANDROID_BISECT')
 BISECT_DIR = os.environ.get('BISECT_DIR') or DEFAULT_BISECT_DIR
 
@@ -96,10 +102,10 @@ class CompilerWrapper():
 
 def main(argv):
   cw = CompilerWrapper(argv[1:])
-  if BISECT_STAGE not in bisect_driver.VALID_MODES or '-o' not in argv:
-    cw.invoke_compiler()
-  else:
+  if BISECT_STAGE and BISECT_STAGE in bisect_driver.VALID_MODES and '-o' in argv:
     cw.bisect()
+  else:
+    cw.invoke_compiler()
 
 
 if __name__ == '__main__':
