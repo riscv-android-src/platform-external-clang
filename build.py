@@ -480,26 +480,39 @@ def install_libomp(build_dir, install_dir, host):
     if host == 'darwin-x86':
         return
 
-    lib_dir = os.path.join(
+    module = 'libomp'
+    lib_dir_base = os.path.join(
         install_dir, 'lib64/clang', short_version(), 'lib/linux')
-    if not os.path.isdir(lib_dir):
-        makedirs(lib_dir)
 
-    product_to_arch = {
-        'generic': 'arm',
-        'generic_arm64': 'arm64',
-        'generic_x86': 'x86',
-        'generic_x86_64': 'x86_64',
-    }
+    # Tuples of (product, android_arch, llvm_arch)
+    product_to_arch = (
+        ('generic', 'arm', 'arm'),
+        ('generic_arm64', 'arm64', 'aarch64'),
+        ('generic_x86', 'x86', 'i386'),
+        ('generic_x86_64', 'x86_64', 'x86_64'),
+    )
 
-    for product, arch in product_to_arch.items():
-        module = 'libomp-' + arch
+    # OpenMP generates per-architecture headers, but so far they're all the
+    # same. Just install the ARM ones.
+    headers_src_path = android_path(
+        'external/openmp_llvm/runtime/src/generated/arm')
+    headers_install_dir = os.path.join(
+        install_dir, 'lib64/clang', short_version(), 'include')
+    for header in os.listdir(headers_src_path):
+        install_file(os.path.join(headers_src_path, header),
+                     headers_install_dir)
+
+    for product, arch, llvm_arch in product_to_arch:
         product_dir = os.path.join(build_dir, 'target/product', product)
-        shared_libs = os.path.join(product_dir, 'obj/SHARED_LIBRARIES')
-        built_lib = os.path.join(
-            shared_libs,
-            '{}_intermediates/PACKED/{}.so'.format(module, module))
-        install_file(built_lib, os.path.join(lib_dir, module + '.so'))
+        static_libs = os.path.join(product_dir, 'obj/STATIC_LIBRARIES')
+        built_lib = os.path.join(static_libs,
+                                 '{}-{}_intermediates'.format(module, arch),
+                                 '{}-{}.a'.format(module, arch))
+
+        lib_dir = os.path.join(lib_dir_base, llvm_arch)
+        if not os.path.isdir(lib_dir):
+            makedirs(lib_dir)
+        install_file(built_lib, os.path.join(lib_dir, '{}.a'.format(module)))
 
 
 def install_sanitizers(build_dir, install_dir, host):
