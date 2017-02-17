@@ -696,8 +696,8 @@ def parse_args():
 
     build_debug_clang_group = parser.add_mutually_exclusive_group()
     build_debug_clang_group.add_argument(
-        '--debug-clang', action='store_true', default=True,
-        help='Also generate a debug version of clang (enabled by default).')
+        '--debug-clang', action='store_true', default=False,
+        help='Also generate a debug version of clang (disabled by default).')
     build_debug_clang_group.add_argument(
         '--no-debug-clang', action='store_false',
         dest='debug_clang',
