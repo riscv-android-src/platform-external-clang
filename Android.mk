@@ -80,9 +80,12 @@ clang-toolchain-minimal: \
 clang-toolchain-full: \
     clang-host-cross
 
-# Build libomp on Linux host.  Build modules for the host and some specific
-# targets.
-clang-toolchain-full: libomp
+# Build libomp and libLLVMFuzzer* on Linux host.
+clang-toolchain-full: \
+    libLLVMFuzzer \
+    libLLVMFuzzerNoMain \
+    libomp
+# Build modules for some specific targets.
 ifneq (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
 clang-toolchain-full: libomp-$(TARGET_ARCH)
 endif # ifneq  (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
