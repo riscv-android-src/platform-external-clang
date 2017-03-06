@@ -135,6 +135,13 @@ def symlink(src, dst):
         os.symlink(src, dst)
 
 
+def remove(path):
+    """Proxy for os.remove with logging and dry-run support."""
+    logger().info('remove %s', path)
+    if not Config.dry_run:
+        os.remove(path)
+
+
 def build(out_dir, prebuilts_path=None, prebuilts_version=None,
           build_all_clang_tools=None, build_all_llvm_tools=None,
           debug_clang=None, max_jobs=multiprocessing.cpu_count(),
@@ -241,6 +248,11 @@ def install_toolchain(build_dir, install_dir, host, strip):
     # wrappers for now since we're not using them in the NDK yet anyway.
     if not host.startswith('windows'):
         install_compiler_wrapper(install_dir, host)
+
+        # After installing the compiler wrapper (when clang and clang++ get
+        # renamed with the '.real' suffix), symlink clang++.real to
+        # clang.real.
+        symlink_clangxx(install_dir)
 
     install_sanitizer_scripts(install_dir)
     install_scan_scripts(install_dir)
@@ -659,6 +671,13 @@ def install_compiler_wrapper(install_dir, host):
         install_file(wrapper, old_file)
 
     install_file(bisect, os.path.join(install_dir, 'bin/bisect_driver.py'))
+
+
+# Remove clang++.real and make it a symlink to 'clang.real' instead.
+def symlink_clangxx(install_dir):
+    dst = os.path.join(install_dir, 'bin', 'clang++.real')
+    remove(dst)
+    symlink('clang.real', dst)
 
 
 def parse_args():
