@@ -261,6 +261,7 @@ def install_toolchain(build_dir, install_dir, host, strip):
     install_profile_rt(build_dir, install_dir, host)
     install_sanitizers(build_dir, install_dir, host)
     install_sanitizer_tests(build_dir, install_dir, host)
+    install_libfuzzer(build_dir, install_dir, host)
     install_libomp(build_dir, install_dir, host)
     install_license_files(install_dir)
     install_repo_prop(install_dir)
@@ -485,6 +486,49 @@ def install_host_profile_rt(build_dir, host, lib_dir):
             static_libs, 'libprofile_rt_intermediates/libprofile_rt.a')
         lib_name = 'libclang_rt.profile-{}.a'.format(arch)
         install_file(built_lib, os.path.join(lib_dir, lib_name))
+
+
+def install_libfuzzer(build_dir, install_dir, host):
+    # libfuzzer is not built for Darwin
+    if host == 'darwin-x86':
+        return
+
+    lib_dir_base = os.path.join(
+        install_dir, 'lib64/clang', short_version(), 'lib/linux')
+
+    # Tuples of (product, llvm_arch)
+    product_to_arch = (
+        ('generic', 'arm'),
+        ('generic_arm64', 'aarch64'),
+        ('generic_mips', 'mips'),
+        ('generic_mips64', 'mips64'),
+        ('generic_x86', 'i386'),
+        ('generic_x86_64', 'x86_64'),
+    )
+
+    # libLLVMFuzzer has headers that should be installed too.
+    headers_src_path = android_path(
+        'external/llvm/lib/Fuzzer/')
+    headers_install_dir = os.path.join(
+        install_dir, 'prebuilt_include', 'llvm', 'lib', 'Fuzzer')
+    makedirs(headers_install_dir)
+    for header in os.listdir(headers_src_path):
+        if header.endswith('.h') or header.endswith('.def'):
+            install_file(os.path.join(headers_src_path, header),
+                         headers_install_dir)
+
+    for product, llvm_arch in product_to_arch:
+        product_dir = os.path.join(build_dir, 'target/product', product)
+        static_libs = os.path.join(product_dir, 'obj/STATIC_LIBRARIES')
+        built_lib = os.path.join(static_libs,
+                                 'libLLVMFuzzer_intermediates',
+                                 'libLLVMFuzzer.a')
+
+        lib_dir = os.path.join(lib_dir_base, llvm_arch)
+        if not os.path.isdir(lib_dir):
+            makedirs(lib_dir)
+        # We rename to libFuzzer.a to be consistent with external usage.
+        install_file(built_lib, os.path.join(lib_dir, 'libFuzzer.a'))
 
 
 def install_libomp(build_dir, install_dir, host):
