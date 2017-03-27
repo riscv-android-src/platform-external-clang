@@ -594,10 +594,14 @@ def install_sanitizers(build_dir, install_dir, host):
         ('generic_mips64', 'mips64'),
     )
 
-    sanitizers = ('asan', 'ubsan_standalone')
+    sanitizers = ('asan', 'ubsan_standalone', 'tsan')
 
     for product, arch in product_to_arch:
         for sanitizer in sanitizers:
+            if sanitizer == 'tsan' and arch not in ('aarch64', 'x86_64'):
+                # tsan is only supported for aarch64 and x86_64.
+                continue
+
             module = 'libclang_rt.{}-{}-android'.format(sanitizer, arch)
             product_dir = os.path.join(build_dir, 'target/product', product)
             lib_dir = os.path.join(product_dir, 'obj/SHARED_LIBRARIES',
