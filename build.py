@@ -589,6 +589,7 @@ def install_sanitizers(build_dir, install_dir, host):
         ('generic', 'arm'),
         ('generic_arm64', 'aarch64'),
         ('generic_x86', 'i686'),
+        ('generic_x86_64', 'x86_64'),
         ('generic_mips', 'mips'),
         ('generic_mips64', 'mips64'),
     )

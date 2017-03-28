@@ -92,7 +92,7 @@ endif # ifneq  (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
 
 endif # ifneq ($(HOST_OS),darwin)
 
-ifneq (,$(filter arm arm64 x86 mips mips64,$(TARGET_ARCH)))
+ifneq (,$(filter arm arm64 x86 x86_64 mips mips64,$(TARGET_ARCH)))
 clang-toolchain-minimal: \
     $(ADDRESS_SANITIZER_RUNTIME_LIBRARY) \
     $(UBSAN_RUNTIME_LIBRARY)
