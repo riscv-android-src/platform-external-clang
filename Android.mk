@@ -96,5 +96,9 @@ ifneq (,$(filter arm arm64 x86 x86_64 mips mips64,$(TARGET_ARCH)))
 clang-toolchain-minimal: \
     $(ADDRESS_SANITIZER_RUNTIME_LIBRARY) \
     $(UBSAN_RUNTIME_LIBRARY)
+endif # (,$(filter arm arm64 x86 x86_64 mips mips64,$(TARGET_ARCH)))
 
+ifneq (,$(filter arm64 x86_64,$(TARGET_ARCH)))
+clang-toolchain-minimal: \
+    $(TSAN_RUNTIME_LIBRARY)
 endif
