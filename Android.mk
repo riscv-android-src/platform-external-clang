@@ -12,6 +12,8 @@ clang-toolchain-full: \
     clang-format \
     clang-tidy \
     FileCheck \
+    libLLVMFuzzer \
+    libLLVMFuzzerNoMain \
     llvm-ar \
     llvm-as \
     llvm-dis \
@@ -80,10 +82,8 @@ clang-toolchain-minimal: \
 clang-toolchain-full: \
     clang-host-cross
 
-# Build libomp and libLLVMFuzzer* on Linux host.
+# Build libomp on Linux host.
 clang-toolchain-full: \
-    libLLVMFuzzer \
-    libLLVMFuzzerNoMain \
     libomp
 # Build modules for some specific targets.
 ifneq (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
