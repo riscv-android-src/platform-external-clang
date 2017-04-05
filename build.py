@@ -489,7 +489,25 @@ def install_host_profile_rt(build_dir, host, lib_dir):
 
 
 def install_libfuzzer(build_dir, install_dir, host):
-    # libfuzzer is not built for Darwin
+    # The host libFuzzer.a should be built/installed for non-Windows builds.
+    is_windows = host.startswith('windows')
+    if not is_windows:
+        host_dir = os.path.join(build_dir, 'host/', host)
+        static_libs = os.path.join(host_dir, 'obj/STATIC_LIBRARIES')
+        built_lib = os.path.join(static_libs,
+                                 'libLLVMFuzzer_intermediates',
+                                 'libLLVMFuzzer.a')
+
+        # lib64/clang/4.0/lib/linux/host/libFuzzer.a is an example install path.
+        host_lib_dir = os.path.join(install_dir, 'lib64/clang',
+            short_version(), 'lib', host[:-4], 'host')
+
+        if not os.path.isdir(host_lib_dir):
+            makedirs(host_lib_dir)
+        # We rename to libFuzzer.a to be consistent with external usage.
+        install_file(built_lib, os.path.join(host_lib_dir, 'libFuzzer.a'))
+
+    # libfuzzer target prebuilts are not built for Darwin.
     if host == 'darwin-x86':
         return
 
