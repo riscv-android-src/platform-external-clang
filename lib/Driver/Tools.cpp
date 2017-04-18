@@ -14,7 +14,6 @@
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/ObjCRuntime.h"
 #include "clang/Basic/Version.h"
-#include "clang/Basic/VirtualFileSystem.h"
 #include "clang/Config/config.h"
 #include "clang/Driver/Action.h"
 #include "clang/Driver/Compilation.h"
@@ -277,9 +276,8 @@ static void AddLinkerInputs(const ToolChain &TC, const InputInfoList &Inputs,
 
   // LIBRARY_PATH - included following the user specified library paths.
   //                and only supported on native toolchains.
-  if (!TC.isCrossCompiling()) {
+  if (!TC.isCrossCompiling())
     addDirectoryList(Args, CmdArgs, "-L", "LIBRARY_PATH");
-  }
 }
 
 /// Add OpenMP linker script arguments at the end of the argument list so that
@@ -3145,19 +3143,6 @@ static void addClangRT(const ToolChain &TC, const ArgList &Args,
   CmdArgs.push_back(TC.getCompilerRTArgString(Args, "builtins"));
 }
 
-static void addArchSpecificRPath(const ToolChain &TC, const ArgList &Args,
-                                 ArgStringList &CmdArgs) {
-  // In the cross-compilation case, arch-specific library path is likely
-  // unavailable at runtime.
-  if (TC.isCrossCompiling()) return;
-
-  std::string CandidateRPath = TC.getArchSpecificLibPath();
-  if (TC.getVFS().exists(CandidateRPath)) {
-    CmdArgs.push_back("-rpath");
-    CmdArgs.push_back(Args.MakeArgString(CandidateRPath.c_str()));
-  }
-}
-
 static void addOpenMPRuntime(ArgStringList &CmdArgs, const ToolChain &TC,
                               const ArgList &Args) {
   if (!Args.hasFlag(options::OPT_fopenmp, options::OPT_fopenmp_EQ,
@@ -3178,8 +3163,6 @@ static void addOpenMPRuntime(ArgStringList &CmdArgs, const ToolChain &TC,
     // Already diagnosed.
     break;
   }
-
-  addArchSpecificRPath(TC, Args, CmdArgs);
 }
 
 static void addSanitizerRuntime(const ToolChain &TC, const ArgList &Args,
@@ -3190,10 +3173,6 @@ static void addSanitizerRuntime(const ToolChain &TC, const ArgList &Args,
   if (IsWhole) CmdArgs.push_back("-whole-archive");
   CmdArgs.push_back(TC.getCompilerRTArgString(Args, Sanitizer, IsShared));
   if (IsWhole) CmdArgs.push_back("-no-whole-archive");
-
-  if (IsShared) {
-    addArchSpecificRPath(TC, Args, CmdArgs);
-  }
 }
 
 // Tries to use a file with the list of dynamic symbols that need to be exported
@@ -10155,8 +10134,6 @@ void gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
         }
         if (JA.isHostOffloading(Action::OFK_OpenMP))
           CmdArgs.push_back("-lomptarget");
-
-        addArchSpecificRPath(ToolChain, Args, CmdArgs);
       }
 
       AddRunTimeLibs(ToolChain, D, CmdArgs, Args);
