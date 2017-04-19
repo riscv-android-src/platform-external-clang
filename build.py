@@ -254,6 +254,7 @@ def install_toolchain(build_dir, install_dir, host, strip):
         # clang.real.
         symlink_clangxx(install_dir)
 
+    install_git_clang_format(install_dir)
     install_sanitizer_scripts(install_dir)
     install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
@@ -347,6 +348,12 @@ def install_winpthreads(install_dir):
     lib32_install = os.path.join(install_dir, 'bin', lib_name + '.32')
     install_file(lib_path, lib_install)
     install_file(lib32_path, lib32_install)
+
+
+def install_git_clang_format(install_dir):
+    script_path = android_path(
+        'external/clang/tools/clang-format/git-clang-format')
+    install_file(script_path, os.path.join(install_dir, 'bin'))
 
 
 def install_sanitizer_scripts(install_dir):
