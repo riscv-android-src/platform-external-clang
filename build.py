@@ -258,6 +258,7 @@ def install_toolchain(build_dir, install_dir, host, strip):
     install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
     install_headers(build_dir, install_dir, host)
+    install_development_headers(install_dir, host)
     install_profile_rt(build_dir, install_dir, host)
     install_sanitizers(build_dir, install_dir, host)
     install_sanitizer_tests(build_dir, install_dir, host)
@@ -309,6 +310,7 @@ def get_built_host_files(host, minimal):
             'bin/sancov' + bin_ext,
             'bin/sanstats' + bin_ext,
             'lib64/libLLVM' + lib_ext,
+            'lib64/libclang' + lib_ext,
             'lib64/LLVMgold' + lib_ext,
         ])
     return built_files
@@ -440,6 +442,21 @@ def install_headers(build_dir, install_dir, host):
 
     symlink(short_version(),
             os.path.join(install_dir, 'lib64/clang', long_version()))
+
+
+# Install LLVM and Clang development headers
+def install_development_headers(install_dir, host):
+    # libclang and libLLVM are not packaged for Windows
+    if host.startswith('windows'):
+        return
+
+    include_base = os.path.join(install_dir, 'prebuilt_include')
+    projects = ('llvm', 'clang', 'compiler-rt')
+
+    for project in projects:
+        dst = os.path.join(include_base, project, 'include')
+        src = android_path('external', project, 'include')
+        install_directory(src, dst)
 
 
 def install_profile_rt(build_dir, install_dir, host):

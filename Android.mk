@@ -12,6 +12,8 @@ clang-toolchain-full: \
     clang-format \
     clang-tidy \
     FileCheck \
+    libclang \
+    libLLVM \
     libLLVMFuzzer \
     libLLVMFuzzerNoMain \
     llvm-ar \
