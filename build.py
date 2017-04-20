@@ -775,6 +775,10 @@ def parse_args():
     parser.add_argument(
         '-v', '--verbose', action='store_true', default=False,
         help='Print debug output.')
+    parser.add_argument(
+        '--skip-stage1-install', action='store_true', default=False,
+        help='Do not install the stage1 output.  To be used with care to restart'
+             ' failed stage2.')
 
     multi_stage_group = parser.add_mutually_exclusive_group()
     multi_stage_group.add_argument(
@@ -841,13 +845,15 @@ def main():
             install_host_dir = os.path.join(stage_1_install_dir, host)
             install_dir = os.path.join(install_host_dir, package_name)
 
-            # Remove any previously installed toolchain so it doesn't pollute
-            # the build.
-            if os.path.exists(install_host_dir):
-                rmtree(install_host_dir)
+            if not args.skip_stage1_install:
+                # Remove any previously installed toolchain so it doesn't
+                # pollute the build.
+                if os.path.exists(install_host_dir):
+                    rmtree(install_host_dir)
 
-            if not host.startswith('windows'):
-                install_minimal_toolchain(stage_1_out_dir, install_dir, host, True)
+                if not host.startswith('windows'):
+                    install_minimal_toolchain(stage_1_out_dir, install_dir,
+                                              host, True)
 
         stage_2_out_dir = build_path('stage2')
         build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir,
