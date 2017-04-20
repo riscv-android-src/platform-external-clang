@@ -11,6 +11,9 @@
 /* Bug report URL. */
 #define BUG_REPORT_URL "http://llvm.org/bugs/"
 
+/* Default linker to use. */
+#define CLANG_DEFAULT_LINKER ""
+
 /* Default C++ stdlib to use. */
 #define CLANG_DEFAULT_CXX_STDLIB ""
 
@@ -38,7 +41,7 @@
 /* Define if we have libxml2 */
 /* #undef CLANG_HAVE_LIBXML */
 
-#define PACKAGE_STRING "LLVM 4.0.285906"
+#define PACKAGE_STRING "LLVM 5.0.300080"
 
 /* The LLVM product name and version */
 #define BACKEND_PACKAGE_STRING PACKAGE_STRING
