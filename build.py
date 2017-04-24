@@ -142,10 +142,51 @@ def remove(path):
         os.remove(path)
 
 
+def gather_profile(base_prebuilts_path, base_prebuilts_version, host, max_jobs):
+    build_dir = build_path('stage2-instrumented')
+    install_base = build_path('stage2-instrumented-install')
+    install_version = 'clang-dev'
+    install_dir = os.path.join(install_base, host, install_version)
+
+    if os.path.exists(install_base):
+        rmtree(install_base)
+
+    # Build and install an instrumented clang
+    build_product(out_dir=build_dir, product='aosp_arm64',
+                  prebuilts_path=base_prebuilts_path,
+                  prebuilts_version=base_prebuilts_version,
+                  build_all_clang_tools=False, build_all_llvm_tools=False,
+                  debug_clang=False, max_jobs=max_jobs,
+                  use_updated_version=True, profile_task='instrument')
+
+    install_built_host_files(build_dir, install_dir, host, strip=True, minimal=True)
+    install_headers(build_dir, install_dir, host)
+
+    # Use the instrumented clang to generate profiles
+    profile_out_dir = build_path('stage2-profiled')
+    build_product(out_dir=profile_out_dir, product='aosp_arm64',
+                  prebuilts_path=install_base,
+                  prebuilts_version=install_version,
+                  build_all_clang_tools=False, build_all_llvm_tools=False,
+                  debug_clang=False, max_jobs=max_jobs,
+                  use_updated_version=True, profile_task='generate')
+
+    # Merge the profiles into a single file
+    llvm_profdata = os.path.join(base_prebuilts_path, host,
+                                 base_prebuilts_version, 'bin', 'llvm-profdata')
+    profiles_dir = os.path.join(profile_out_dir, 'profiles')
+    inputs = [os.path.join(profiles_dir, p) for p in os.listdir(profiles_dir)]
+    output = os.path.join(install_dir, 'clang.profile')
+
+    command = [llvm_profdata, 'merge', '-j', '1', '-output=' + output] + inputs
+    check_call(command)
+    return output
+
+
 def build(out_dir, prebuilts_path=None, prebuilts_version=None,
           build_all_clang_tools=None, build_all_llvm_tools=None,
           debug_clang=None, max_jobs=multiprocessing.cpu_count(),
-          use_updated_version=False):
+          use_updated_version=False, profile_task=None):
     products = (
         'aosp_arm',
         'aosp_arm64',
@@ -157,12 +198,12 @@ def build(out_dir, prebuilts_path=None, prebuilts_version=None,
     for product in products:
         build_product(out_dir, product, prebuilts_path, prebuilts_version,
                       build_all_clang_tools, build_all_llvm_tools, debug_clang,
-                      max_jobs, use_updated_version)
+                      max_jobs, use_updated_version, profile_task)
 
 
 def build_product(out_dir, product, prebuilts_path, prebuilts_version,
                   build_all_clang_tools, build_all_llvm_tools, debug_clang,
-                  max_jobs, use_updated_version):
+                  max_jobs, use_updated_version, profile_task):
     env = dict(ORIG_ENV)
     env['DISABLE_LLVM_DEVICE_BUILDS'] = 'true'
     env['DISABLE_RELOCATION_PACKER'] = 'true'
@@ -196,6 +237,29 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
         targets += ['clang-toolchain-full']
     if build_all_llvm_tools:
         targets += ['llvm-tools']
+
+    if profile_task is not None:
+        if profile_task == 'instrument':
+            overrides.append('FORCE_BUILD_LLVM_PROFILE_GENERATE=true')
+
+        if profile_task.startswith('use=') and len(profile_task) > 4:
+            profile = profile_task[4:]
+            overrides.append('FORCE_BUILD_LLVM_PROFILE_USE={}'.format(profile))
+
+        if profile_task == 'generate':
+            profiles_dir = os.path.join(out_dir, 'profiles')
+            env['LLVM_PROFILE_FILE'] = os.path.join(profiles_dir,
+                                                    'clang-%9m.profraw')
+
+            # Remove the output directory because the profile might have changed
+            # but the build system doesn't have any knowledge of it.
+            if os.path.exists(out_dir):
+                rmtree(out_dir)
+            makedirs(profiles_dir)
+
+            # Build just the targets chosen for profiling
+            targets = ['clang-profile-targets']
+
     check_call(['make', jobs_arg] + overrides + targets,
                cwd=android_path(), env=env)
 
@@ -834,6 +898,15 @@ def parse_args():
         dest='debug_clang',
         help='Skip generating a debug version of clang.')
 
+    build_pgo_clang_group = parser.add_mutually_exclusive_group()
+    build_pgo_clang_group.add_argument(
+        '--pgo-clang', action='store_true', default=False,
+        help='Generate clang binary with PGO optimization (disabled by default).')
+    build_pgo_clang_group.add_argument(
+        '--no-pgo-clang', action='store_false',
+        dest='pgo_clang',
+        help='Generate clang binary without PGO optimizaiton.')
+
     return parser.parse_args()
 
 
@@ -885,13 +958,22 @@ def main():
                     install_minimal_toolchain(stage_1_out_dir, install_dir,
                                               host, True)
 
+        profile_file = ''
+        # TODO Need to test and enable PGO for Darwin
+        if args.pgo_clang and hosts[0] == 'linux-x86':
+            profile_file = gather_profile(base_prebuilts_path=stage_1_install_dir,
+                                          base_prebuilts_version=package_name,
+                                          host=hosts[0],
+                                          max_jobs=args.jobs)
+
         stage_2_out_dir = build_path('stage2')
         build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir,
               prebuilts_version=package_name,
               build_all_clang_tools=True,
               build_all_llvm_tools=args.build_all_llvm_tools,
               debug_clang=args.debug_clang,
-              max_jobs=args.jobs, use_updated_version=True)
+              max_jobs=args.jobs, use_updated_version=True,
+              profile_task='use='+profile_file)
         final_out_dir = stage_2_out_dir
 
     dist_dir = ORIG_ENV.get('DIST_DIR', final_out_dir)

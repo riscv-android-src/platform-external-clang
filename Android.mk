@@ -1,7 +1,7 @@
 LOCAL_PATH := $(call my-dir)
 CLANG_ROOT_PATH := $(LOCAL_PATH)
 
-.PHONY: clang-toolchain-minimal clang-toolchain-full llvm-tools
+.PHONY: clang-toolchain-minimal clang-toolchain-full llvm-tools clang-profile-targets
 clang-toolchain-minimal: \
     clang-host \
     libprofile_rt \
@@ -104,3 +104,9 @@ ifneq (,$(filter arm64 x86_64,$(TARGET_ARCH)))
 clang-toolchain-minimal: \
     $(TSAN_RUNTIME_LIBRARY)
 endif
+
+# Expicitly specify libLLVM-host64 even though libc is indirectly dependent on
+# it (for versioner)
+clang-profile-targets: \
+    libc \
+    libLLVM-host64
