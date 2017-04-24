@@ -229,6 +229,7 @@ def package_toolchain(build_dir, build_name, host, dist_dir, strip=True):
 def install_minimal_toolchain(build_dir, install_dir, host, strip):
     install_built_host_files(build_dir, install_dir, host, strip, minimal=True)
     install_headers(build_dir, install_dir, host)
+    install_profile_rt(build_dir, install_dir, host)
     install_sanitizers(build_dir, install_dir, host)
 
 
@@ -286,7 +287,10 @@ def get_built_host_files(host, minimal):
         'bin/clang++' + bin_ext,
     ]
     if not is_windows:
-        built_files.extend(['lib64/libc++' + lib_ext])
+        built_files.extend([
+            'bin/llvm-profdata' + bin_ext,
+            'lib64/libc++' + lib_ext
+        ])
 
     if minimal:
         return built_files

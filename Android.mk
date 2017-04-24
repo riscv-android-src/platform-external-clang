@@ -3,7 +3,9 @@ CLANG_ROOT_PATH := $(LOCAL_PATH)
 
 .PHONY: clang-toolchain-minimal clang-toolchain-full llvm-tools
 clang-toolchain-minimal: \
-    clang-host
+    clang-host \
+    libprofile_rt \
+    llvm-profdata
 
 clang-toolchain-full: \
     clang-toolchain-minimal \
@@ -21,8 +23,7 @@ clang-toolchain-full: \
     llvm-dis \
     llvm-link \
     llvm-symbolizer \
-    LLVMgold \
-    libprofile_rt
+    LLVMgold
 
 llvm-tools: \
     bugpoint \
@@ -52,7 +53,6 @@ llvm-tools: \
     llvm-nm \
     llvm-objdump \
     llvm-pdbdump \
-    llvm-profdata \
     llvm-readobj \
     llvm-rtdyld \
     llvm-size \
