@@ -11,13 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "RAIIObjectsForParser.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/Basic/PragmaKinds.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
+#include "clang/Parse/RAIIObjectsForParser.h"
 #include "clang/Sema/LoopHint.h"
 #include "clang/Sema/Scope.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -82,6 +82,12 @@ struct PragmaOpenCLExtensionHandler : public PragmaHandler {
 
 struct PragmaFPContractHandler : public PragmaHandler {
   PragmaFPContractHandler() : PragmaHandler("FP_CONTRACT") {}
+  void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
+                    Token &FirstToken) override;
+};
+
+struct PragmaFPHandler : public PragmaHandler {
+  PragmaFPHandler() : PragmaHandler("fp") {}
   void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
                     Token &FirstToken) override;
 };
@@ -266,6 +272,9 @@ void Parser::initializePragmaHandlers() {
 
   NoUnrollHintHandler.reset(new PragmaUnrollHintHandler("nounroll"));
   PP.AddPragmaHandler(NoUnrollHintHandler.get());
+
+  FPHandler.reset(new PragmaFPHandler());
+  PP.AddPragmaHandler("clang", FPHandler.get());
 }
 
 void Parser::resetPragmaHandlers() {
@@ -344,6 +353,9 @@ void Parser::resetPragmaHandlers() {
 
   PP.RemovePragmaHandler(NoUnrollHintHandler.get());
   NoUnrollHintHandler.reset();
+
+  PP.RemovePragmaHandler("clang", FPHandler.get());
+  FPHandler.reset();
 }
 
 /// \brief Handle the annotation token produced for #pragma unused(...)
@@ -454,7 +466,21 @@ void Parser::HandlePragmaFPContract() {
   tok::OnOffSwitch OOS =
     static_cast<tok::OnOffSwitch>(
     reinterpret_cast<uintptr_t>(Tok.getAnnotationValue()));
-  Actions.ActOnPragmaFPContract(OOS);
+
+  LangOptions::FPContractModeKind FPC;
+  switch (OOS) {
+  case tok::OOS_ON:
+    FPC = LangOptions::FPC_On;
+    break;
+  case tok::OOS_OFF:
+    FPC = LangOptions::FPC_Off;
+    break;
+  case tok::OOS_DEFAULT:
+    FPC = getLangOpts().getDefaultFPContractMode();
+    break;
+  }
+
+  Actions.ActOnPragmaFPContract(FPC);
   ConsumeToken(); // The annotation token.
 }
 
@@ -486,42 +512,50 @@ StmtResult Parser::HandlePragmaCaptured()
 }
 
 namespace {
-  typedef llvm::PointerIntPair<IdentifierInfo *, 1, bool> OpenCLExtData;
+  enum OpenCLExtState : char {
+    Disable, Enable, Begin, End
+  };
+  typedef std::pair<const IdentifierInfo *, OpenCLExtState> OpenCLExtData;
 }
 
 void Parser::HandlePragmaOpenCLExtension() {
   assert(Tok.is(tok::annot_pragma_opencl_extension));
-  OpenCLExtData data =
-      OpenCLExtData::getFromOpaqueValue(Tok.getAnnotationValue());
-  unsigned state = data.getInt();
-  IdentifierInfo *ename = data.getPointer();
+  OpenCLExtData *Data = static_cast<OpenCLExtData*>(Tok.getAnnotationValue());
+  auto State = Data->second;
+  auto Ident = Data->first;
   SourceLocation NameLoc = Tok.getLocation();
   ConsumeToken(); // The annotation token.
 
-  OpenCLOptions &f = Actions.getOpenCLOptions();
-  auto CLVer = getLangOpts().OpenCLVersion;
-  auto &Supp = getTargetInfo().getSupportedOpenCLOpts();
+  auto &Opt = Actions.getOpenCLOptions();
+  auto Name = Ident->getName();
   // OpenCL 1.1 9.1: "The all variant sets the behavior for all extensions,
   // overriding all previously issued extension directives, but only if the
   // behavior is set to disable."
-  if (state == 0 && ename->isStr("all")) {
-#define OPENCLEXT(nm) \
-    if (Supp.is_##nm##_supported_extension(CLVer)) \
-      f.nm = 0;
-#include "clang/Basic/OpenCLExtensions.def"
-  }
-#define OPENCLEXT(nm) else if (ename->isStr(#nm)) \
-   if (Supp.is_##nm##_supported_extension(CLVer)) \
-     f.nm = state; \
-   else if (Supp.is_##nm##_supported_core(CLVer)) \
-     PP.Diag(NameLoc, diag::warn_pragma_extension_is_core) << ename; \
-   else \
-     PP.Diag(NameLoc, diag::warn_pragma_unsupported_extension) << ename;
-#include "clang/Basic/OpenCLExtensions.def"
-  else {
-    PP.Diag(NameLoc, diag::warn_pragma_unknown_extension) << ename;
-    return;
-  }
+  if (Name == "all") {
+    if (State == Disable) {
+      Opt.disableAll();
+      Opt.enableSupportedCore(getLangOpts().OpenCLVersion);
+    } else {
+      PP.Diag(NameLoc, diag::warn_pragma_expected_predicate) << 1;
+    }
+  } else if (State == Begin) {
+    if (!Opt.isKnown(Name) ||
+        !Opt.isSupported(Name, getLangOpts().OpenCLVersion)) {
+      Opt.support(Name);
+    }
+    Actions.setCurrentOpenCLExtension(Name);
+  } else if (State == End) {
+    if (Name != Actions.getCurrentOpenCLExtension())
+      PP.Diag(NameLoc, diag::warn_pragma_begin_end_mismatch);
+    Actions.setCurrentOpenCLExtension("");
+  } else if (!Opt.isKnown(Name))
+    PP.Diag(NameLoc, diag::warn_pragma_unknown_extension) << Ident;
+  else if (Opt.isSupportedExtension(Name, getLangOpts().OpenCLVersion))
+    Opt.enable(Name, State == Enable);
+  else if (Opt.isSupportedCore(Name, getLangOpts().OpenCLVersion))
+    PP.Diag(NameLoc, diag::warn_pragma_extension_is_core) << Ident;
+  else
+    PP.Diag(NameLoc, diag::warn_pragma_unsupported_extension) << Ident;
 }
 
 void Parser::HandlePragmaMSPointersToMembers() {
@@ -1441,29 +1475,34 @@ PragmaOpenCLExtensionHandler::HandlePragma(Preprocessor &PP,
       "OPENCL";
     return;
   }
-  IdentifierInfo *ename = Tok.getIdentifierInfo();
+  IdentifierInfo *Ext = Tok.getIdentifierInfo();
   SourceLocation NameLoc = Tok.getLocation();
 
   PP.Lex(Tok);
   if (Tok.isNot(tok::colon)) {
-    PP.Diag(Tok.getLocation(), diag::warn_pragma_expected_colon) << ename;
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_expected_colon) << Ext;
     return;
   }
 
   PP.Lex(Tok);
   if (Tok.isNot(tok::identifier)) {
-    PP.Diag(Tok.getLocation(), diag::warn_pragma_expected_enable_disable);
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_expected_predicate) << 0;
     return;
   }
-  IdentifierInfo *op = Tok.getIdentifierInfo();
+  IdentifierInfo *Pred = Tok.getIdentifierInfo();
 
-  unsigned state;
-  if (op->isStr("enable")) {
-    state = 1;
-  } else if (op->isStr("disable")) {
-    state = 0;
-  } else {
-    PP.Diag(Tok.getLocation(), diag::warn_pragma_expected_enable_disable);
+  OpenCLExtState State;
+  if (Pred->isStr("enable")) {
+    State = Enable;
+  } else if (Pred->isStr("disable")) {
+    State = Disable;
+  } else if (Pred->isStr("begin"))
+    State = Begin;
+  else if (Pred->isStr("end"))
+    State = End;
+  else {
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_expected_predicate)
+      << Ext->isStr("all");
     return;
   }
   SourceLocation StateLoc = Tok.getLocation();
@@ -1475,19 +1514,21 @@ PragmaOpenCLExtensionHandler::HandlePragma(Preprocessor &PP,
     return;
   }
 
-  OpenCLExtData data(ename, state);
+  auto Info = PP.getPreprocessorAllocator().Allocate<OpenCLExtData>(1);
+  Info->first = Ext;
+  Info->second = State;
   MutableArrayRef<Token> Toks(PP.getPreprocessorAllocator().Allocate<Token>(1),
                               1);
   Toks[0].startToken();
   Toks[0].setKind(tok::annot_pragma_opencl_extension);
   Toks[0].setLocation(NameLoc);
-  Toks[0].setAnnotationValue(data.getOpaqueValue());
+  Toks[0].setAnnotationValue(static_cast<void*>(Info));
   Toks[0].setAnnotationEndLoc(StateLoc);
   PP.EnterTokenStream(Toks, /*DisableMacroExpansion=*/true);
 
   if (PP.getPPCallbacks())
-    PP.getPPCallbacks()->PragmaOpenCLExtension(NameLoc, ename, 
-                                               StateLoc, state);
+    PP.getPPCallbacks()->PragmaOpenCLExtension(NameLoc, Ext, 
+                                               StateLoc, State);
 }
 
 /// \brief Handle '#pragma omp ...' when OpenMP is disabled.
@@ -1930,6 +1971,129 @@ void PragmaOptimizeHandler::HandlePragma(Preprocessor &PP,
   }
 
   Actions.ActOnPragmaOptimize(IsOn, FirstToken.getLocation());
+}
+
+namespace {
+/// Used as the annotation value for tok::annot_pragma_fp.
+struct TokFPAnnotValue {
+  enum FlagKinds { Contract };
+  enum FlagValues { On, Off, Fast };
+
+  FlagKinds FlagKind;
+  FlagValues FlagValue;
+};
+} // end anonymous namespace
+
+void PragmaFPHandler::HandlePragma(Preprocessor &PP,
+                                   PragmaIntroducerKind Introducer,
+                                   Token &Tok) {
+  // fp
+  Token PragmaName = Tok;
+  SmallVector<Token, 1> TokenList;
+
+  PP.Lex(Tok);
+  if (Tok.isNot(tok::identifier)) {
+    PP.Diag(Tok.getLocation(), diag::err_pragma_fp_invalid_option)
+        << /*MissingOption=*/true << "";
+    return;
+  }
+
+  while (Tok.is(tok::identifier)) {
+    IdentifierInfo *OptionInfo = Tok.getIdentifierInfo();
+
+    auto FlagKind =
+        llvm::StringSwitch<llvm::Optional<TokFPAnnotValue::FlagKinds>>(
+            OptionInfo->getName())
+            .Case("contract", TokFPAnnotValue::Contract)
+            .Default(None);
+    if (!FlagKind) {
+      PP.Diag(Tok.getLocation(), diag::err_pragma_fp_invalid_option)
+          << /*MissingOption=*/false << OptionInfo;
+      return;
+    }
+    PP.Lex(Tok);
+
+    // Read '('
+    if (Tok.isNot(tok::l_paren)) {
+      PP.Diag(Tok.getLocation(), diag::err_expected) << tok::l_paren;
+      return;
+    }
+    PP.Lex(Tok);
+
+    if (Tok.isNot(tok::identifier)) {
+      PP.Diag(Tok.getLocation(), diag::err_pragma_fp_invalid_argument)
+          << PP.getSpelling(Tok) << OptionInfo->getName();
+      return;
+    }
+    const IdentifierInfo *II = Tok.getIdentifierInfo();
+
+    auto FlagValue =
+        llvm::StringSwitch<llvm::Optional<TokFPAnnotValue::FlagValues>>(
+            II->getName())
+            .Case("on", TokFPAnnotValue::On)
+            .Case("off", TokFPAnnotValue::Off)
+            .Case("fast", TokFPAnnotValue::Fast)
+            .Default(llvm::None);
+
+    if (!FlagValue) {
+      PP.Diag(Tok.getLocation(), diag::err_pragma_fp_invalid_argument)
+          << PP.getSpelling(Tok) << OptionInfo->getName();
+      return;
+    }
+    PP.Lex(Tok);
+
+    // Read ')'
+    if (Tok.isNot(tok::r_paren)) {
+      PP.Diag(Tok.getLocation(), diag::err_expected) << tok::r_paren;
+      return;
+    }
+    PP.Lex(Tok);
+
+    auto *AnnotValue = new (PP.getPreprocessorAllocator())
+        TokFPAnnotValue{*FlagKind, *FlagValue};
+    // Generate the loop hint token.
+    Token FPTok;
+    FPTok.startToken();
+    FPTok.setKind(tok::annot_pragma_fp);
+    FPTok.setLocation(PragmaName.getLocation());
+    FPTok.setAnnotationEndLoc(PragmaName.getLocation());
+    FPTok.setAnnotationValue(reinterpret_cast<void *>(AnnotValue));
+    TokenList.push_back(FPTok);
+  }
+
+  if (Tok.isNot(tok::eod)) {
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_extra_tokens_at_eol)
+        << "clang fp";
+    return;
+  }
+
+  auto TokenArray = llvm::make_unique<Token[]>(TokenList.size());
+  std::copy(TokenList.begin(), TokenList.end(), TokenArray.get());
+
+  PP.EnterTokenStream(std::move(TokenArray), TokenList.size(),
+                      /*DisableMacroExpansion=*/false);
+}
+
+void Parser::HandlePragmaFP() {
+  assert(Tok.is(tok::annot_pragma_fp));
+  auto *AnnotValue =
+      reinterpret_cast<TokFPAnnotValue *>(Tok.getAnnotationValue());
+
+  LangOptions::FPContractModeKind FPC;
+  switch (AnnotValue->FlagValue) {
+  case TokFPAnnotValue::On:
+    FPC = LangOptions::FPC_On;
+    break;
+  case TokFPAnnotValue::Fast:
+    FPC = LangOptions::FPC_Fast;
+    break;
+  case TokFPAnnotValue::Off:
+    FPC = LangOptions::FPC_Off;
+    break;
+  }
+
+  Actions.ActOnPragmaFPContract(FPC);
+  ConsumeToken(); // The annotation token.
 }
 
 /// \brief Parses loop or unroll pragma hint value and fills in Info.

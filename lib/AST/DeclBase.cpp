@@ -109,11 +109,23 @@ const char *Decl::getDeclKindName() const {
 void Decl::setInvalidDecl(bool Invalid) {
   InvalidDecl = Invalid;
   assert(!isa<TagDecl>(this) || !cast<TagDecl>(this)->isCompleteDefinition());
-  if (Invalid && !isa<ParmVarDecl>(this)) {
+  if (!Invalid) {
+    return;
+  }
+
+  if (!isa<ParmVarDecl>(this)) {
     // Defensive maneuver for ill-formed code: we're likely not to make it to
     // a point where we set the access specifier, so default it to "public"
     // to avoid triggering asserts elsewhere in the front end. 
     setAccess(AS_public);
+  }
+
+  // Marking a DecompositionDecl as invalid implies all the child BindingDecl's
+  // are invalid too.
+  if (DecompositionDecl *DD = dyn_cast<DecompositionDecl>(this)) {
+    for (BindingDecl *Binding : DD->bindings()) {
+      Binding->setInvalidDecl();
+    }
   }
 }
 
@@ -607,6 +619,7 @@ bool Decl::isWeakImported() const {
 unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
   switch (DeclKind) {
     case Function:
+    case CXXDeductionGuide:
     case CXXMethod:
     case CXXConstructor:
     case ConstructorUsingShadow:
@@ -639,10 +652,12 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Typedef:
     case TypeAlias:
     case TypeAliasTemplate:
-    case UnresolvedUsingTypename:
     case TemplateTypeParm:
     case ObjCTypeParam:
       return IDNS_Ordinary | IDNS_Type;
+
+    case UnresolvedUsingTypename:
+      return IDNS_Ordinary | IDNS_Type | IDNS_Using;
 
     case UsingShadow:
       return 0; // we'll actually overwrite this later
@@ -651,6 +666,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
       return IDNS_Ordinary | IDNS_Using;
 
     case Using:
+    case UsingPack:
       return IDNS_Using;
 
     case ObjCProtocol:
