@@ -200,7 +200,7 @@ def build_product(out_dir, product, prebuilts_path, prebuilts_version,
                cwd=android_path(), env=env)
 
 
-def package_toolchain(build_dir, build_name, host, dist_dir):
+def package_toolchain(build_dir, build_name, host, dist_dir, strip=True):
     package_name = 'clang-' + build_name
     install_host_dir = build_path('install', host)
     install_dir = os.path.join(install_host_dir, package_name)
@@ -210,7 +210,7 @@ def package_toolchain(build_dir, build_name, host, dist_dir):
     if os.path.exists(install_host_dir):
         rmtree(install_host_dir)
 
-    install_toolchain(build_dir, install_dir, host, True)
+    install_toolchain(build_dir, install_dir, host, strip)
 
     version_file_path = os.path.join(install_dir, 'AndroidVersion.txt')
     with open(version_file_path, 'w') as version_file:
@@ -860,7 +860,9 @@ def main():
     build(out_dir=stage_1_out_dir,
           build_all_clang_tools=is_stage1_final,
           build_all_llvm_tools=(is_stage1_final and args.build_all_llvm_tools),
+          debug_clang=(is_stage1_final and args.debug_clang),
           max_jobs=args.jobs, use_updated_version=False)
+
     final_out_dir = stage_1_out_dir
     if args.multi_stage:
         stage_1_install_dir = build_path('stage1-install')
@@ -884,35 +886,17 @@ def main():
               prebuilts_version=package_name,
               build_all_clang_tools=True,
               build_all_llvm_tools=args.build_all_llvm_tools,
+              debug_clang=args.debug_clang,
               max_jobs=args.jobs, use_updated_version=True)
         final_out_dir = stage_2_out_dir
 
-        if args.debug_clang:
-            debug_clang_out_dir = build_path('debug')
-            build(out_dir=debug_clang_out_dir,
-                  prebuilts_path=stage_1_install_dir,
-                  prebuilts_version=package_name,
-                  build_all_clang_tools=True,
-                  build_all_llvm_tools=args.build_all_llvm_tools,
-                  debug_clang=args.debug_clang,
-                  max_jobs=args.jobs, use_updated_version=True)
-            # Install the actual debug toolchain somewhere, so it is easier to
-            # use.
-            debug_package_name = 'clang-debug'
-            base_debug_install_dir = build_path('debug-install')
-            for host in hosts:
-                debug_install_host_dir = os.path.join(
-                    base_debug_install_dir, host)
-                debug_install_dir = os.path.join(
-                    debug_install_host_dir, debug_package_name)
-                if os.path.exists(debug_install_host_dir):
-                    rmtree(debug_install_host_dir)
-                install_toolchain(
-                    debug_clang_out_dir, debug_install_dir, host, False)
-
     dist_dir = ORIG_ENV.get('DIST_DIR', final_out_dir)
     for host in hosts:
-        package_toolchain(final_out_dir, args.build_name, host, dist_dir)
+        # Windows build can be stripped because we don't build a debug clang for
+        # Windows right now.
+        should_strip = host.startswith('windows') or (not args.debug_clang)
+        package_toolchain(final_out_dir, args.build_name, host, dist_dir,
+                          strip=should_strip)
 
 
 if __name__ == '__main__':
