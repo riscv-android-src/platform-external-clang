@@ -209,11 +209,11 @@ bool Sema::CheckARCMethodDecl(ObjCMethodDecl *method) {
     if (!Context.hasSameType(method->getReturnType(), Context.VoidTy)) {
       SourceRange ResultTypeRange = method->getReturnTypeSourceRange();
       if (ResultTypeRange.isInvalid())
-        Diag(method->getLocation(), diag::error_dealloc_bad_result_type)
+        Diag(method->getLocation(), diag::err_dealloc_bad_result_type)
             << method->getReturnType()
             << FixItHint::CreateInsertion(method->getSelectorLoc(0), "(void)");
       else
-        Diag(method->getLocation(), diag::error_dealloc_bad_result_type)
+        Diag(method->getLocation(), diag::err_dealloc_bad_result_type)
             << method->getReturnType()
             << FixItHint::CreateReplacement(ResultTypeRange, "void");
       return true;
@@ -258,7 +258,8 @@ static void DiagnoseObjCImplementedDeprecations(Sema &S,
       S.Diag(ND->getLocation(), diag::note_method_declared_at)
         << ND->getDeclName();
     else
-      S.Diag(ND->getLocation(), diag::note_previous_decl) << "class";
+      S.Diag(ND->getLocation(), diag::note_previous_decl)
+          << (isa<ObjCCategoryDecl>(ND) ? "category" : "class");
   }
 }
 
@@ -1028,6 +1029,7 @@ ActOnStartClassInterface(Scope *S, SourceLocation AtInterfaceLoc,
 /// typedef'ed use for a qualified super class and adds them to the list
 /// of the protocols.
 void Sema::ActOnTypedefedProtocols(SmallVectorImpl<Decl *> &ProtocolRefs,
+                                  SmallVectorImpl<SourceLocation> &ProtocolLocs,
                                    IdentifierInfo *SuperName,
                                    SourceLocation SuperLoc) {
   if (!SuperName)
@@ -1040,8 +1042,14 @@ void Sema::ActOnTypedefedProtocols(SmallVectorImpl<Decl *> &ProtocolRefs,
   if (const TypedefNameDecl *TDecl = dyn_cast_or_null<TypedefNameDecl>(IDecl)) {
     QualType T = TDecl->getUnderlyingType();
     if (T->isObjCObjectType())
-      if (const ObjCObjectType *OPT = T->getAs<ObjCObjectType>())
+      if (const ObjCObjectType *OPT = T->getAs<ObjCObjectType>()) {
         ProtocolRefs.append(OPT->qual_begin(), OPT->qual_end());
+        // FIXME: Consider whether this should be an invalid loc since the loc
+        // is not actually pointing to a protocol name reference but to the
+        // typedef reference. Note that the base class name loc is also pointing
+        // at the typedef.
+        ProtocolLocs.append(OPT->getNumProtocols(), SuperLoc);
+      }
   }
 }
 
@@ -1705,7 +1713,7 @@ Sema::ActOnForwardProtocolDeclaration(SourceLocation AtProtocolLoc,
     DeclsInGroup.push_back(PDecl);
   }
 
-  return BuildDeclaratorGroup(DeclsInGroup, false);
+  return BuildDeclaratorGroup(DeclsInGroup);
 }
 
 Decl *Sema::
@@ -1717,7 +1725,8 @@ ActOnStartCategoryInterface(SourceLocation AtInterfaceLoc,
                             Decl * const *ProtoRefs,
                             unsigned NumProtoRefs,
                             const SourceLocation *ProtoLocs,
-                            SourceLocation EndProtoLoc) {
+                            SourceLocation EndProtoLoc,
+                            AttributeList *AttrList) {
   ObjCCategoryDecl *CDecl;
   ObjCInterfaceDecl *IDecl = getObjCInterfaceDecl(ClassName, ClassLoc, true);
 
@@ -1794,6 +1803,9 @@ ActOnStartCategoryInterface(SourceLocation AtInterfaceLoc,
                                             NumProtoRefs, Context); 
   }
 
+  if (AttrList)
+    ProcessDeclAttributeList(TUScope, CDecl, AttrList);
+
   CheckObjCDeclScope(CDecl);
   return ActOnObjCContainerStartDefinition(CDecl);
 }
@@ -1858,9 +1870,10 @@ Decl *Sema::ActOnStartCategoryImplementation(
       CatIDecl->setImplementation(CDecl);
       // Warn on implementating category of deprecated class under 
       // -Wdeprecated-implementations flag.
-      DiagnoseObjCImplementedDeprecations(*this, 
-                                          dyn_cast<NamedDecl>(IDecl), 
-                                          CDecl->getLocation(), 2);
+      DiagnoseObjCImplementedDeprecations(
+          *this,
+          CatIDecl->isDeprecated() ? CatIDecl : dyn_cast<NamedDecl>(IDecl),
+          CDecl->getLocation(), 2);
     }
   }
 
@@ -2012,7 +2025,7 @@ Sema::ActOnFinishObjCImplementation(Decl *ObjCImpDecl, ArrayRef<Decl *> Decls) {
 
   DeclsInGroup.push_back(ObjCImpDecl);
 
-  return BuildDeclaratorGroup(DeclsInGroup, false);
+  return BuildDeclaratorGroup(DeclsInGroup);
 }
 
 void Sema::CheckImplementationIvars(ObjCImplementationDecl *ImpDecl,
@@ -3036,7 +3049,7 @@ Sema::ActOnForwardClassDeclaration(SourceLocation AtClassLoc,
     DeclsInGroup.push_back(IDecl);
   }
 
-  return BuildDeclaratorGroup(DeclsInGroup, false);
+  return BuildDeclaratorGroup(DeclsInGroup);
 }
 
 static bool tryMatchRecordTypes(ASTContext &Context,
@@ -4310,7 +4323,7 @@ Decl *Sema::ActOnMethodDeclaration(
     bool isVariadic, bool MethodDefinition) {
   // Make sure we can establish a context for the method.
   if (!CurContext->isObjCContainer()) {
-    Diag(MethodLoc, diag::error_missing_method_context);
+    Diag(MethodLoc, diag::err_missing_method_context);
     return nullptr;
   }
   ObjCContainerDecl *OCD = dyn_cast<ObjCContainerDecl>(CurContext);

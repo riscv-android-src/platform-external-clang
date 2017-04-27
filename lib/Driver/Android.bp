@@ -1,5 +1,9 @@
 cc_library_static {
     name: "libclangDriver",
     defaults: ["clang-defaults"],
-    srcs: ["*.cpp"],
+    srcs: [
+        "*.cpp",
+        "ToolChains/*.cpp",
+        "ToolChains/Arch/*.cpp",
+    ],
 }

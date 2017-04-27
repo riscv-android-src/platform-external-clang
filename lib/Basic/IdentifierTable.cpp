@@ -244,7 +244,7 @@ static KeywordStatus getTokenKwStatus(const LangOptions &LangOpts,
 
 /// \brief Returns true if the identifier represents a keyword in the
 /// specified language.
-bool IdentifierInfo::isKeyword(const LangOptions &LangOpts) {
+bool IdentifierInfo::isKeyword(const LangOptions &LangOpts) const {
   switch (getTokenKwStatus(LangOpts, getTokenID())) {
   case KS_Enabled:
   case KS_Extension:
@@ -252,6 +252,19 @@ bool IdentifierInfo::isKeyword(const LangOptions &LangOpts) {
   default:
     return false;
   }
+}
+
+/// \brief Returns true if the identifier represents a C++ keyword in the
+/// specified language.
+bool IdentifierInfo::isCPlusPlusKeyword(const LangOptions &LangOpts) const {
+  if (!LangOpts.CPlusPlus || !isKeyword(LangOpts))
+    return false;
+  // This is a C++ keyword if this identifier is not a keyword when checked
+  // using LangOptions without C++ support.
+  LangOptions LangOptsNoCPP = LangOpts;
+  LangOptsNoCPP.CPlusPlus = false;
+  LangOptsNoCPP.CPlusPlus11 = false;
+  return !isKeyword(LangOptsNoCPP);
 }
 
 tok::PPKeywordKind IdentifierInfo::getPPKeywordID() const {
@@ -443,9 +456,11 @@ std::string Selector::getAsString() const {
   if (getIdentifierInfoFlag() < MultiArg) {
     IdentifierInfo *II = getAsIdentifierInfo();
 
-    // If the number of arguments is 0 then II is guaranteed to not be null.
-    if (getNumArgs() == 0)
+    if (getNumArgs() == 0) {
+      assert(II && "If the number of arguments is 0 then II is guaranteed to "
+                   "not be null.");
       return II->getName();
+    }
 
     if (!II)
       return ":";
@@ -485,8 +500,10 @@ ObjCMethodFamily Selector::getMethodFamilyImpl(Selector sel) {
     if (name == "self") return OMF_self;
     if (name == "initialize") return OMF_initialize;
   }
- 
-  if (name == "performSelector") return OMF_performSelector;
+
+  if (name == "performSelector" || name == "performSelectorInBackground" ||
+      name == "performSelectorOnMainThread")
+    return OMF_performSelector;
 
   // The other method families may begin with a prefix of underscores.
   while (!name.empty() && name.front() == '_')

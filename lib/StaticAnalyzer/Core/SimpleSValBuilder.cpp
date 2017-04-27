@@ -69,6 +69,9 @@ SVal SimpleSValBuilder::evalCastFromNonLoc(NonLoc val, QualType castTy) {
 
   bool isLocType = Loc::isLocType(castTy);
 
+  if (val.getAs<nonloc::PointerToMember>())
+    return val;
+
   if (Optional<nonloc::LocAsInteger> LI = val.getAs<nonloc::LocAsInteger>()) {
     if (isLocType)
       return LI->getLoc();
@@ -335,6 +338,21 @@ SVal SimpleSValBuilder::evalBinOpNN(ProgramStateRef state,
     switch (lhs.getSubKind()) {
     default:
       return makeSymExprValNN(state, op, lhs, rhs, resultTy);
+    case nonloc::PointerToMemberKind: {
+      assert(rhs.getSubKind() == nonloc::PointerToMemberKind &&
+             "Both SVals should have pointer-to-member-type");
+      auto LPTM = lhs.castAs<nonloc::PointerToMember>(),
+           RPTM = rhs.castAs<nonloc::PointerToMember>();
+      auto LPTMD = LPTM.getPTMData(), RPTMD = RPTM.getPTMData();
+      switch (op) {
+        case BO_EQ:
+          return makeTruthVal(LPTMD == RPTMD, resultTy);
+        case BO_NE:
+          return makeTruthVal(LPTMD != RPTMD, resultTy);
+        default:
+          return UnknownVal();
+      }
+    }
     case nonloc::LocAsIntegerKind: {
       Loc lhsL = lhs.castAs<nonloc::LocAsInteger>().getLoc();
       switch (rhs.getSubKind()) {
@@ -344,6 +362,9 @@ SVal SimpleSValBuilder::evalBinOpNN(ProgramStateRef state,
                              resultTy);
         case nonloc::ConcreteIntKind: {
           // Transform the integer into a location and compare.
+          // FIXME: This only makes sense for comparisons. If we want to, say,
+          // add 1 to a LocAsInteger, we'd better unpack the Loc and add to it,
+          // then pack it back into a LocAsInteger.
           llvm::APSInt i = rhs.castAs<nonloc::ConcreteInt>().getValue();
           BasicVals.getAPSIntType(Context.VoidPtrTy).apply(i);
           return evalBinOpLL(state, op, lhsL, makeLoc(i), resultTy);
@@ -863,6 +884,23 @@ SVal SimpleSValBuilder::evalBinOpLL(ProgramStateRef state,
 SVal SimpleSValBuilder::evalBinOpLN(ProgramStateRef state,
                                   BinaryOperator::Opcode op,
                                   Loc lhs, NonLoc rhs, QualType resultTy) {
+  if (op >= BO_PtrMemD && op <= BO_PtrMemI) {
+    if (auto PTMSV = rhs.getAs<nonloc::PointerToMember>()) {
+      if (PTMSV->isNullMemberPointer())
+        return UndefinedVal();
+      if (const FieldDecl *FD = PTMSV->getDeclAs<FieldDecl>()) {
+        SVal Result = lhs;
+
+        for (const auto &I : *PTMSV)
+          Result = StateMgr.getStoreManager().evalDerivedToBase(
+              Result, I->getType(),I->isVirtual());
+        return state->getLValue(FD, Result);
+      }
+    }
+
+    return rhs;
+  }
+
   assert(!BinaryOperator::isComparisonOp(op) &&
          "arguments to comparison ops must be of the same type");
 
@@ -907,6 +945,8 @@ SVal SimpleSValBuilder::evalBinOpLN(ProgramStateRef state,
     rhs = convertToArrayIndex(rhs).castAs<NonLoc>();
     SVal index = UnknownVal();
     const MemRegion *superR = nullptr;
+    // We need to know the type of the pointer in order to add an integer to it.
+    // Depending on the type, different amount of bytes is added.
     QualType elementType;
 
     if (const ElementRegion *elemReg = dyn_cast<ElementRegion>(region)) {
@@ -920,6 +960,10 @@ SVal SimpleSValBuilder::evalBinOpLN(ProgramStateRef state,
       assert(op == BO_Add || op == BO_Sub);
       index = (op == BO_Add) ? rhs : evalMinus(rhs);
       superR = region;
+      // TODO: Is this actually reliable? Maybe improving our MemRegion
+      // hierarchy to provide typed regions for all non-void pointers would be
+      // better. For instance, we cannot extend this towards LocAsInteger
+      // operations, where result type of the expression is integer.
       if (resultTy->isAnyPointerType())
         elementType = resultTy->getPointeeType();
     }
