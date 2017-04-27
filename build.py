@@ -259,6 +259,7 @@ def install_toolchain(build_dir, install_dir, host, strip):
     install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
     install_headers(build_dir, install_dir, host)
+    install_development_headers(install_dir, host)
     install_profile_rt(build_dir, install_dir, host)
     install_sanitizers(build_dir, install_dir, host)
     install_sanitizer_tests(build_dir, install_dir, host)
@@ -310,6 +311,7 @@ def get_built_host_files(host, minimal):
             'bin/sancov' + bin_ext,
             'bin/sanstats' + bin_ext,
             'lib64/libLLVM' + lib_ext,
+            'lib64/libclang' + lib_ext,
             'lib64/LLVMgold' + lib_ext,
         ])
     return built_files
@@ -447,6 +449,21 @@ def install_headers(build_dir, install_dir, host):
 
     symlink(short_version(),
             os.path.join(install_dir, 'lib64/clang', long_version()))
+
+
+# Install LLVM and Clang development headers
+def install_development_headers(install_dir, host):
+    # libclang and libLLVM are not packaged for Windows
+    if host.startswith('windows'):
+        return
+
+    include_base = os.path.join(install_dir, 'prebuilt_include')
+    projects = ('llvm', 'clang', 'compiler-rt')
+
+    for project in projects:
+        dst = os.path.join(include_base, project, 'include')
+        src = android_path('external', project, 'include')
+        install_directory(src, dst)
 
 
 def install_profile_rt(build_dir, install_dir, host):
@@ -782,6 +799,10 @@ def parse_args():
     parser.add_argument(
         '-v', '--verbose', action='store_true', default=False,
         help='Print debug output.')
+    parser.add_argument(
+        '--skip-stage1-install', action='store_true', default=False,
+        help='Do not install the stage1 output.  To be used with care to restart'
+             ' failed stage2.')
 
     multi_stage_group = parser.add_mutually_exclusive_group()
     multi_stage_group.add_argument(
@@ -848,13 +869,15 @@ def main():
             install_host_dir = os.path.join(stage_1_install_dir, host)
             install_dir = os.path.join(install_host_dir, package_name)
 
-            # Remove any previously installed toolchain so it doesn't pollute
-            # the build.
-            if os.path.exists(install_host_dir):
-                rmtree(install_host_dir)
+            if not args.skip_stage1_install:
+                # Remove any previously installed toolchain so it doesn't
+                # pollute the build.
+                if os.path.exists(install_host_dir):
+                    rmtree(install_host_dir)
 
-            if not host.startswith('windows'):
-                install_minimal_toolchain(stage_1_out_dir, install_dir, host, True)
+                if not host.startswith('windows'):
+                    install_minimal_toolchain(stage_1_out_dir, install_dir,
+                                              host, True)
 
         stage_2_out_dir = build_path('stage2')
         build(out_dir=stage_2_out_dir, prebuilts_path=stage_1_install_dir,
