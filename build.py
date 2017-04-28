@@ -874,8 +874,8 @@ def parse_args():
 
     multi_stage_group = parser.add_mutually_exclusive_group()
     multi_stage_group.add_argument(
-        '--multi-stage', action='store_true', default=True,
-        help='Perform multi-stage build (enabled by default).')
+        '--multi-stage', action='store_true', default=False,
+        help='Perform multi-stage build (disabled by default).')
     multi_stage_group.add_argument(
         '--no-multi-stage', action='store_false', dest='multi_stage',
         help='Do not perform multi-stage build.')
@@ -905,7 +905,7 @@ def parse_args():
     build_pgo_clang_group.add_argument(
         '--no-pgo-clang', action='store_false',
         dest='pgo_clang',
-        help='Generate clang binary without PGO optimizaiton.')
+        help='Generate clang binary without PGO optimization.')
 
     return parser.parse_args()
 
