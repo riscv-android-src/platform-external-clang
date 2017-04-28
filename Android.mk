@@ -1,9 +1,11 @@
 LOCAL_PATH := $(call my-dir)
 CLANG_ROOT_PATH := $(LOCAL_PATH)
 
-.PHONY: clang-toolchain-minimal clang-toolchain-full llvm-tools
+.PHONY: clang-toolchain-minimal clang-toolchain-full llvm-tools clang-profile-targets
 clang-toolchain-minimal: \
-    clang-host
+    clang-host \
+    libprofile_rt \
+    llvm-profdata
 
 clang-toolchain-full: \
     clang-toolchain-minimal \
@@ -21,8 +23,7 @@ clang-toolchain-full: \
     llvm-dis \
     llvm-link \
     llvm-symbolizer \
-    LLVMgold \
-    libprofile_rt
+    LLVMgold
 
 llvm-tools: \
     bugpoint \
@@ -52,7 +53,6 @@ llvm-tools: \
     llvm-nm \
     llvm-objdump \
     llvm-pdbdump \
-    llvm-profdata \
     llvm-readobj \
     llvm-rtdyld \
     llvm-size \
@@ -104,3 +104,9 @@ ifneq (,$(filter arm64 x86_64,$(TARGET_ARCH)))
 clang-toolchain-minimal: \
     $(TSAN_RUNTIME_LIBRARY)
 endif
+
+# Expicitly specify libLLVM-host64 even though libc is indirectly dependent on
+# it (for versioner)
+clang-profile-targets: \
+    libc \
+    libLLVM-host64

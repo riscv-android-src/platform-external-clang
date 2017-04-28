@@ -30,10 +30,16 @@ func init() {
 
 func clangForceBuildLlvmComponents(ctx android.LoadHookContext) {
 	if ctx.AConfig().IsEnvTrue("FORCE_BUILD_LLVM_COMPONENTS") {
+		var cflags []string
+
 		type props struct {
 			Target struct {
 				Host struct {
 					Compile_multilib string
+				}
+				Not_windows struct {
+					Cflags []string
+					Ldflags []string
 				}
 			}
 			Multilib struct {
@@ -45,6 +51,19 @@ func clangForceBuildLlvmComponents(ctx android.LoadHookContext) {
 		p := &props{}
 		p.Target.Host.Compile_multilib = "both"
 		p.Multilib.Lib32.Suffix = "_32"
+
+		if ctx.AConfig().IsEnvTrue("FORCE_BUILD_LLVM_PROFILE_GENERATE") {
+			cflags = append(cflags, "-fprofile-instr-generate")
+		}
+		if profile := ctx.AConfig().Getenv("FORCE_BUILD_LLVM_PROFILE_USE"); profile != "" {
+			cflags = append(cflags, "-fprofile-instr-use=" + profile)
+			// TODO (pirama): Investigate and enable these warnings
+			cflags = append(cflags, "-Wno-profile-instr-unprofiled")
+			cflags = append(cflags, "-Wno-profile-instr-out-of-date")
+		}
+		p.Target.Not_windows.Cflags = cflags
+		p.Target.Not_windows.Ldflags = cflags
+
 		ctx.AppendProperties(p)
 	}
 }
