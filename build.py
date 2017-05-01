@@ -654,6 +654,8 @@ def install_libomp(build_dir, install_dir, host):
     product_to_arch = (
         ('generic', 'arm', 'arm'),
         ('generic_arm64', 'arm64', 'aarch64'),
+        ('generic_mips', 'mips', 'mipsel'),
+        ('generic_mips64', 'mips64', 'mips64el'),
         ('generic_x86', 'x86', 'i386'),
         ('generic_x86_64', 'x86_64', 'x86_64'),
     )

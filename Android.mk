@@ -87,10 +87,9 @@ clang-toolchain-full: \
 # Build libomp on Linux host.
 clang-toolchain-full: \
     libomp
+
 # Build modules for some specific targets.
-ifneq (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
 clang-toolchain-full: libomp-$(TARGET_ARCH)
-endif # ifneq  (,$(filter arm arm64 x86 x86_64,$(TARGET_ARCH)))
 
 endif # ifneq ($(HOST_OS),darwin)
 
