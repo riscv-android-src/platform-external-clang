@@ -36,28 +36,37 @@ llvm-tools: \
     llvm-ar \
     llvm-as \
     llvm-bcanalyzer \
+    llvm-cat \
     llvm-config \
     llvm-cov \
     llvm-c-test \
     llvm-cxxdump \
+    llvm-cxxfilt \
     llvm-diff \
     llvm-dis \
     llvm-dsymutil \
     llvm-dwarfdump \
     llvm-dwp \
     llvm-extract \
+    llvm-jitlistener \
     llvm-link \
     llvm-lto \
+    llvm-lto2 \
     llvm-mc \
     llvm-mcmarkup \
+    llvm-modextract \
     llvm-nm \
     llvm-objdump \
+    llvm-opt-report \
     llvm-pdbdump \
     llvm-readobj \
     llvm-rtdyld \
     llvm-size \
     llvm-split \
+    llvm-strings \
     llvm-symbolizer \
+    llvm-tblgen \
+    llvm-xray \
     not \
     obj2yaml \
     opt \
