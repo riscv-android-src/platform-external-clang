@@ -330,6 +330,7 @@ def install_toolchain(build_dir, install_dir, host, strip):
     install_sanitizer_tests(build_dir, install_dir, host)
     install_libfuzzer(build_dir, install_dir, host)
     install_libomp(build_dir, install_dir, host)
+    install_libcxx_headers(install_dir)
     install_license_files(install_dir)
     install_repo_prop(install_dir)
 
@@ -681,6 +682,31 @@ def install_libomp(build_dir, install_dir, host):
         if not os.path.isdir(lib_dir):
             makedirs(lib_dir)
         install_file(built_lib, os.path.join(lib_dir, '{}.a'.format(module)))
+
+
+def install_libcxx_headers(install_dir):
+    cxx_dir = android_path('external', 'libcxx', 'include')
+    cxxabi_dir = android_path('external', 'libcxxabi', 'include')
+
+    copy_files = list()
+    for f in os.listdir(cxx_dir):
+        # __cxxabi_config.h in libcxx is a symlink to the coresponding file in
+        # in libcxxabi
+        if f in ('CMakeLists.txt', '__cxxabi_config.h'):
+            continue
+        copy_files.append(os.path.join(cxx_dir, f))
+
+    copy_files += [os.path.join(cxxabi_dir, f) for f in os.listdir(cxxabi_dir)]
+
+    dst_dir = os.path.join(install_dir, 'include', 'c++', 'v1')
+    makedirs(dst_dir)
+
+    for src in copy_files:
+        dst = os.path.join(dst_dir, os.path.basename(src))
+        if os.path.isdir(src):
+            install_directory(src, dst)
+        else:
+            install_file(src, dst)
 
 
 def install_sanitizers(build_dir, install_dir, host):
