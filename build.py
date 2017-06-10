@@ -21,6 +21,7 @@ import logging
 import multiprocessing
 import os
 import pprint
+import re
 import subprocess
 import sys
 
@@ -324,7 +325,7 @@ def install_toolchain(build_dir, install_dir, host, strip):
     install_scan_scripts(install_dir)
     install_analyzer_scripts(install_dir)
     install_headers(build_dir, install_dir, host)
-    install_development_headers(install_dir, host)
+    install_development_headers(build_dir, install_dir, host)
     install_profile_rt(build_dir, install_dir, host)
     install_sanitizers(build_dir, install_dir, host)
     install_sanitizer_tests(build_dir, install_dir, host)
@@ -521,7 +522,7 @@ def install_headers(build_dir, install_dir, host):
 
 
 # Install LLVM and Clang development headers
-def install_development_headers(install_dir, host):
+def install_development_headers(build_dir, install_dir, host):
     # libclang and libLLVM are not packaged for Windows
     if host.startswith('windows'):
         return
@@ -529,10 +530,58 @@ def install_development_headers(install_dir, host):
     include_base = os.path.join(install_dir, 'prebuilt_include')
     projects = ('llvm', 'clang', 'compiler-rt')
 
+    def install_generated_headers(project, dst_dir):
+        # Only generated headers inside the include directory are installed by
+        # upstream.  In AOSP build files, such headers are only declared in the
+        # top level Android.bp for each project
+        bp = android_path('external', project, 'Android.bp')
+        bp_contents = file(bp).read()
+
+        # The generated headers are in the outs field of a tblgen spec.  Use .*?
+        # for non-greedy, minimal matching.
+        tblgen_re = 'tblgen {.*?outs: \[\n?(.*?),?\n?]'
+        matches = re.findall(tblgen_re, bp_contents, re.DOTALL)
+
+        # Sanitize and convert to a list of filenames
+        matches = ','.join(matches)  # flatten to a single string
+        matches = re.subn('\"|\s', '', matches)[0]  # remove quotes & whitespace
+        matches = matches.replace(',,', ',')  # remove repeated commas
+        matches = matches.rstrip(',')  # remove trailing comma
+        headers = matches.split(',')
+
+        # Find the header in project-specific path within build_dir
+        project_out = os.path.join(build_dir, 'soong', '.intermediates',
+                                   'external', project)
+        output = []
+        for header in headers:
+            basename = os.path.basename(header)
+            command = ['find', project_out, '-name', basename]
+
+            output = subprocess.check_output(command)
+            src_file = output.rstrip('\n')
+            if not src_file or src_file.find('\n') != -1:
+                print 'Unexpected output from command: ', command
+                print 'Output is', output
+                raise Exception
+
+            dst_file = os.path.join(dst_dir, header)
+            install_file(src_file, dst_file)
+
+
     for project in projects:
         dst = os.path.join(include_base, project, 'include')
         src = android_path('external', project, 'include')
         install_directory(src, dst)
+
+        if project != 'compiler-rt':
+            install_generated_headers(project, dst)
+
+    # Replace include/llvm/Config with the pre-generated headers for host from
+    # external/llvm/host/include/llvm/Config
+    llvm_config_install = os.path.join(include_base, 'llvm/include/llvm/Config')
+    rmtree(llvm_config_install)
+    install_directory(android_path('external/llvm/host/include/llvm/Config'),
+                      llvm_config_install)
 
 
 def install_profile_rt(build_dir, install_dir, host):
