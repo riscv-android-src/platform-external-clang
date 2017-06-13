@@ -577,11 +577,16 @@ def install_development_headers(build_dir, install_dir, host):
             install_generated_headers(project, dst)
 
     # Replace include/llvm/Config with the pre-generated headers for host from
-    # external/llvm/host/include/llvm/Config
-    llvm_config_install = os.path.join(include_base, 'llvm/include/llvm/Config')
+    # external/llvm/host/include/llvm/Config.  Copy llvm-platform-config.h back
+    # since it is included from llvm-config.h
+    llvm_config_dir = 'include/llvm/Config'
+    llvm_config_install = os.path.join(include_base, 'llvm', llvm_config_dir)
+    host_config_dir = android_path('external/llvm/host', llvm_config_dir)
     rmtree(llvm_config_install)
-    install_directory(android_path('external/llvm/host/include/llvm/Config'),
-                      llvm_config_install)
+    install_directory(host_config_dir, llvm_config_install)
+    install_file(android_path('external', 'llvm', llvm_config_dir,
+                              'llvm-platform-config.h'),
+                 llvm_config_install)
 
 
 def install_profile_rt(build_dir, install_dir, host):
