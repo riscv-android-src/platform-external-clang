@@ -17,8 +17,6 @@ package clang
 import (
 	"android/soong/android"
 	"android/soong/cc"
-
-	"github.com/google/blueprint"
 )
 
 // Clang binaries (clang, clang-check, clang-format) need to be compiled for both 32-bit and 64-bit,
@@ -68,7 +66,7 @@ func clangForceBuildLlvmComponents(ctx android.LoadHookContext) {
 	}
 }
 
-func clangBinaryHostFactory() (blueprint.Module, []interface{}) {
+func clangBinaryHostFactory() android.Module {
 	module, _ := cc.NewBinary(android.HostSupported)
 	android.AddLoadHook(module, clangForceBuildLlvmComponents)
 
