@@ -364,11 +364,15 @@ def get_built_host_files(host, minimal):
     built_files.extend([
         'bin/clang-format' + bin_ext,
         'bin/clang-tidy' + bin_ext,
+        'lib64/LLVMgold' + lib_ext,
+        'lib64/libLLVM' + lib_ext,
     ])
 
     if is_windows:
         built_files.extend([
             'bin/clang_32' + bin_ext,
+            'lib/LLVMgold' + lib_ext,
+            'lib/libLLVM' + lib_ext,
         ])
     else:
         built_files.extend([
@@ -380,9 +384,7 @@ def get_built_host_files(host, minimal):
             'bin/llvm-symbolizer' + bin_ext,
             'bin/sancov' + bin_ext,
             'bin/sanstats' + bin_ext,
-            'lib64/libLLVM' + lib_ext,
             'lib64/libclang' + lib_ext,
-            'lib64/LLVMgold' + lib_ext,
         ])
     return built_files
 
@@ -420,6 +422,10 @@ def install_winpthreads(install_dir):
     lib32_install = os.path.join(install_dir, 'bin', lib_name + '.32')
     install_file(lib_path, lib_install)
     install_file(lib32_path, lib32_install)
+
+    # Also need to install it alongside LLVMgold.dll/libLLVM.dll.
+    install_file(lib_path, os.path.join(install_dir, 'lib64', lib_name))
+    install_file(lib32_path, os.path.join(install_dir, 'lib', lib_name))
 
 
 def install_git_clang_format(install_dir):
