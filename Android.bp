@@ -3,7 +3,6 @@ cc_defaults {
     defaults: [
         "llvm-defaults",
     ],
-    clang: true,
 
     header_libs: ["clang-headers"],
 
@@ -11,11 +10,16 @@ cc_defaults {
         "-pedantic",
         "-Wcast-qual",
         "-Wno-long-long",
+        "-Wno-unused-lambda-capture",
     ],
 
     include_dirs: [
         "external/clang/include",
         "external/clang/lib/CodeGen",
+    ],
+
+    tidy_checks: [
+        "-google-runtime-member-string-references",
     ],
 
     target: {
@@ -31,14 +35,14 @@ cc_defaults {
                 "-Wno-error=uninitialized",
             ],
         },
-        linux: {
+        linux_glibc: {
             cflags: ["-Wno-nested-anon-types"],
         },
         darwin: {
             cflags: ["-Wno-nested-anon-types"],
         },
         // Clang is not needed for 32-bit linux or darwin
-        linux_x86: {
+        linux_glibc_x86: {
             enabled: false,
         },
         darwin_x86: {
@@ -238,21 +242,8 @@ cc_library_shared {
                 "-lversion",
             ],
         },
-        darwin: {
+        not_windows: {
             shared_libs: ["libc++"],
-
-            host_ldlibs: [
-                "-ldl",
-                "-lpthread",
-            ],
-        },
-        linux: {
-            shared_libs: ["libc++"],
-
-            host_ldlibs: [
-                "-ldl",
-                "-lpthread",
-            ],
         },
     },
 
