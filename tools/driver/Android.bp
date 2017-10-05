@@ -99,7 +99,7 @@ clang_binary_host {
         darwin: {
             ldflags: ["-Wl,-export_dynamic"],
         },
-        linux: {
+        linux_glibc: {
             ldflags: ["-Wl,--export-dynamic"],
         },
     },
