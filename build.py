@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+f#!/usr/bin/env python
 #
 # Copyright (C) 2015 The Android Open Source Project
 #
@@ -1074,4 +1074,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    print 'The aosp/llvm branch is deprecated and unmaintained.'
+    print 'Use the llvm-toolchain branch (repo init ... -b llvm-toolchain).'
+    print 'https://android.googlesource.com/toolchain/llvm_android/+/master'
+    sys.exit(0)
