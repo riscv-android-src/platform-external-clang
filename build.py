@@ -1074,7 +1074,7 @@ def main():
 
 
 if __name__ == '__main__':
-    print 'The aosp/llvm branch is deprecated and unmaintained.'
+    print 'This script and llvm branch are deprecated and unmaintained.'
     print 'Use the llvm-toolchain branch (repo init ... -b llvm-toolchain).'
     print 'https://android.googlesource.com/toolchain/llvm_android/+/master'
     sys.exit(0)
